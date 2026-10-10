@@ -2,9 +2,9 @@ import {NextResponse} from 'next/server';
 import {cookies} from 'next/headers';
 import {randomBytes,randomUUID} from 'node:crypto';
 import {db as mainDb,hashPassword,verifyPassword,audit as recordAudit} from '../../../lib/db.js';
-import {demoDatabase,demoEnabled,demoSession} from '../../../lib/demo.js';
+import {demoDatabase,demoEnabled,demoSession,restoreDemoSession} from '../../../lib/demo.js';
 import {operationPages} from '../../../lib/operations-config.js';
-import {recordPayment,discountInvoice} from '../../../lib/finance.js';
+import {recordPayment,discountInvoice,enforceFinanceLimit} from '../../../lib/finance.js';
 import {validateClinical,saveClinicalDetails} from '../../../lib/clinical.js';
 import {linkPackage,consumePackage} from '../../../lib/packages.js';
 import {transaction} from '../../../lib/operations.js';
@@ -15,6 +15,7 @@ const response=(x,status=200)=>NextResponse.json(x,{status});
 async function handle(req,{params}){
 try{
 const path=(await params).path.join('/');const method=req.method;
+if(process.env.CLINIC_DEMO_ONLY==='1'&&['setup','login'].includes(path)){if(path==='setup'&&method==='GET')return response({needed:false});return response({error:'النسخة المنشورة للديمو فقط؛ استخدم استعراض الديمو بدون تسجيل'},403);}
 if(method==='POST'&&(!req.headers.get('origin')||new URL(req.headers.get('origin')).host!==req.headers.get('host')))return response({error:'مصدر الطلب غير مسموح'},403);
 const body=method==='POST'?await req.json():{};const jar=await cookies();
 if(path==='demo'&&method==='POST'){
@@ -24,7 +25,8 @@ if(path==='demo'&&method==='POST'){
  jar.set('clinic_demo',result.token,{httpOnly:true,sameSite:'strict',secure:process.env.NODE_ENV==='production',path:'/',maxAge:3600});return response({ok:true,demo:true});
 }
 const demoToken=jar.get('clinic_demo')?.value;
-const isDemo=!!(demoEnabled()&&demoToken&&demoDatabase.prepare('SELECT token FROM sessions WHERE token=? AND expires>?').get(demoToken,Date.now()));
+const isDemo=restoreDemoSession(demoToken);
+if(process.env.CLINIC_DEMO_ONLY==='1'&&!isDemo)return response({error:'افتح الديمو لبدء جلسة العرض'},401);
 const db=isDemo?demoDatabase:mainDb;
 const audit=(...args)=>recordAudit(...args,db);
 const sessionToken=isDemo?demoToken:jar.get('clinic_session')?.value;
@@ -46,7 +48,10 @@ if(path==='me')return response({user:{id:user.id,name:user.name,role:user.role},
 if(path==='logout'&&method==='POST'){db.prepare('DELETE FROM sessions WHERE token=?').run(sessionToken);if(isDemo)jar.delete('clinic_demo');else jar.delete('clinic_session');return response({ok:true});}
 const mod=path.split('/')[0];const action=method==='GET'?'view':['approve','refund','discount'].includes(body.action)?'approve':body.id?'edit':'create';
 if(!allowed(user,permissions,mod,action))return response({error:'ليس لديك صلاحية لهذا الإجراء'},403);
+if(path==='finance/policy'&&user.role!=='owner')return response({error:'ضبط الحدود المالية مخصص لمالك المجمع'},403);
+if(mod==='finance'&&method==='POST'){try{enforceFinanceLimit(db,body,user.role==='owner')}catch(e){return response({error:e.message},403);}}
 if(path==='reports/integrations'&&user.role!=='owner')return response({error:'سجل التكاملات مخصص للمالك'},403);
+if(path==='finance/cashbox'&&method==='POST'&&!allowed(user,permissions,'finance','approve'))return response({error:'إقفال الصندوق يحتاج صلاحية اعتماد المالية'},403);
 if(operationPages[path]){
  if(method==='GET')return response(listOperations(db,path,permissions));
  if(path==='inventory/movements'&&body.kind==='Adjustment'&&!allowed(user,permissions,'inventory','approve'))return response({error:'تسوية المخزون تحتاج صلاحية اعتماد'},403);

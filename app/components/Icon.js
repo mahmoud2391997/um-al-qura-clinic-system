@@ -1,4 +1,6 @@
 const paths={
+'finance/policy':<><path d="M3 5h18M3 12h18M3 19h18"/><circle cx="8" cy="5" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="10" cy="19" r="2"/></>,
+'finance/cashbox':<><rect x="3" y="8" width="18" height="13" rx="2"/><path d="M7 8V3h10v5M3 14h18m-11 3h4"/></>,
 'finance/payments':<><path d="M3 7h18v14H3V7ZM6 3h12v4M7 12h10M7 16h4"/></>,
 'finance/discounts':<><path d="m3 3 9 1 9 9-8 8-9-9-1-9Z"/><circle cx="7" cy="7" r="1"/><path d="m10 16 6-6"/></>,
 'finance/packages':<><path d="M3 6h18v5a3 3 0 0 0 0 6v3H3v-3a3 3 0 0 0 0-6V6ZM15 6v3m0 3v3m0 3v2"/></>,

@@ -1,0 +1,7 @@
+{
+  "framework": "nextjs",
+  "env": {
+    "CLINIC_DEMO": "1",
+    "CLINIC_DEMO_ONLY": "1"
+  }
+}
