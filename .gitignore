@@ -1,0 +1,8 @@
+node_modules/
+.next/
+data/
+.env*
+
+# Local preview captures
+/*.png
+.DS_Store

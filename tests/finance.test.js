@@ -1,0 +1,5 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createDatabase} from '../lib/db.js';
+import {recordPayment,discountInvoice} from '../lib/finance.js';
+test('ledger and invoice stay consistent on collection refund and rejected overdraft',()=>{const db=createDatabase(':memory:');db.prepare('INSERT INTO invoices(amount,paid) VALUES(100,0)').run();recordPayment(db,{id:1,payment:60,method:'Card'},'D');assert.throws(()=>recordPayment(db,{id:1,payment:50},'D'),/تتجاوز/);recordPayment(db,{id:1,payment:10,action:'refund',reason:'Demo'},'D');assert.equal(db.prepare('SELECT paid FROM invoices').get().paid,50);assert.equal(db.prepare('SELECT COUNT(*) n FROM payments').get().n,2);assert.throws(()=>discountInvoice(db,{id:1,discount:60,reason:'Demo'},'D'),/يتجاوز/);discountInvoice(db,{id:1,discount:20,reason:'Demo'},'D');assert.equal(db.prepare('SELECT amount FROM invoices').get().amount,80);db.close();});

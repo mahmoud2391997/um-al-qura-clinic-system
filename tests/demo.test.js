@@ -1,0 +1,6 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+process.env.CLINIC_DB=':memory:';
+const {db}=await import('../lib/db.js');const {demoDatabase,demoSession,demoEnabled}=await import('../lib/demo.js');
+test('demo records isolated from clinic database',()=>{assert.equal(db.prepare('SELECT count(*) n FROM patients').get().n,0);assert.equal(demoDatabase.prepare('SELECT count(*) n FROM patients').get().n,150);assert.equal(db.prepare('SELECT count(*) n FROM users').get().n,0)});
+test('demo sessions only created for demo roles in demo database',()=>{assert.equal(demoSession('arbitrary-role'),null);const s=demoSession('physio');assert.equal(demoDatabase.prepare('SELECT user_id FROM sessions WHERE token=?').get(s.token).user_id,'demo-physio');assert.equal(db.prepare('SELECT token FROM sessions WHERE token=?').get(s.token),undefined)});
+test('production demo disabled unless explicitly enabled',()=>{const before=process.env.NODE_ENV;const flag=process.env.CLINIC_DEMO;process.env.NODE_ENV='production';delete process.env.CLINIC_DEMO;assert.equal(demoEnabled(),false);process.env.CLINIC_DEMO='1';assert.equal(demoEnabled(),true);if(before===undefined)delete process.env.NODE_ENV;else process.env.NODE_ENV=before;if(flag===undefined)delete process.env.CLINIC_DEMO;else process.env.CLINIC_DEMO=flag});

@@ -1,0 +1,22 @@
+{
+  "name": "um-al-qura-clinic",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1",
+    "build": "next build",
+    "start": "next start --hostname 127.0.0.1",
+    "test": "node --test tests/*.test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "next": "^16.4.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  }
+}
