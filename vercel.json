@@ -3,5 +3,6 @@
   "env": {
     "CLINIC_DEMO": "1",
     "CLINIC_DEMO_ONLY": "1"
-  }
+  },
+  "buildCommand": "CLINIC_DB=:memory: npm test && npm run build"
 }
