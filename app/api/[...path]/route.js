@@ -5,6 +5,7 @@ import {db as mainDb,hashPassword,verifyPassword,audit as recordAudit} from '../
 import {demoDatabase,demoEnabled,demoSession,restoreDemoSession} from '../../../lib/demo.js';
 import {operationPages} from '../../../lib/operations-config.js';
 import {recordPayment,discountInvoice,enforceFinanceLimit} from '../../../lib/finance.js';
+import {approveClinicalSession} from '../../../lib/session-resources.js';
 import {validateClinical,saveClinicalDetails} from '../../../lib/clinical.js';
 import {linkPackage,consumePackage} from '../../../lib/packages.js';
 import {transaction} from '../../../lib/operations.js';
@@ -96,7 +97,7 @@ if(mod==='clinical'){
  const clinician=['doctor','physio','physio_lead'].includes(user.role);
  if(method==='GET')return response(clinician?db.prepare('SELECT c.*,p.name patient,d.structured,d.episode_id FROM clinical c JOIN patients p ON p.id=c.patient_id LEFT JOIN clinical_details d ON d.clinical_id=c.id WHERE c.provider=? ORDER BY c.id DESC').all(user.id):db.prepare('SELECT c.*,p.name patient,d.structured,d.episode_id FROM clinical c JOIN patients p ON p.id=c.patient_id LEFT JOIN clinical_details d ON d.clinical_id=c.id ORDER BY c.id DESC').all());
  if(!clinician)return response({error:'التوثيق السريري للممارس المؤهل فقط'},403);
- if(body.id){const before=db.prepare('SELECT * FROM clinical WHERE id=? AND provider=?').get(body.id,user.id);if(!before)return response({error:'السجل غير متاح'},404);if(before.approved)return response({error:'السجل معتمد؛ استخدم إضافة موثقة'},409);if(body.action==='approve')db.prepare('UPDATE clinical SET approved=1 WHERE id=?').run(body.id);else transaction(db,()=>{validateClinical({...body,kind:before.kind});db.prepare('UPDATE clinical SET content=? WHERE id=?').run(body.content||'',body.id);saveClinicalDetails(db,body.id,{...body,kind:before.kind},user.id);});audit(user.id,'clinical.update',String(body.id),before,body);return response({ok:true});}
+ if(body.id){const before=db.prepare('SELECT * FROM clinical WHERE id=? AND provider=?').get(body.id,user.id);if(!before)return response({error:'السجل غير متاح'},404);if(before.approved)return response({error:'السجل معتمد؛ استخدم إضافة موثقة'},409);if(body.action==='approve')approveClinicalSession(db,body.id,user.id);else transaction(db,()=>{validateClinical({...body,kind:before.kind});db.prepare('UPDATE clinical SET content=? WHERE id=?').run(body.content||'',body.id);saveClinicalDetails(db,body.id,{...body,kind:before.kind},user.id);});audit(user.id,'clinical.update',String(body.id),before,body);return response({ok:true});}
  if(!body.patient_id||!body.content||!body.episode)return response({error:'المريض والحالة والمحتوى مطلوبون'},400);
  if(body.parent_id&&!db.prepare('SELECT id FROM clinical WHERE id=? AND provider=? AND approved=1').get(body.parent_id,user.id))return response({error:'الإضافة تحتاج سجلًا معتمدًا يخصك'},400);
  transaction(db,()=>{validateClinical(body);const result=db.prepare('INSERT INTO clinical(patient_id,provider,kind,episode,content,parent_id) VALUES(?,?,?,?,?,?)').run(body.patient_id,user.id,body.kind,body.episode,body.content,body.parent_id||null);saveClinicalDetails(db,Number(result.lastInsertRowid),body,user.id);});audit(user.id,'clinical.create','new',null,{kind:body.kind,patient_id:body.patient_id});return response({ok:true});
