@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {createDatabase} from '../lib/db.js';import {savePurchasing,listPurchasing} from '../lib/purchasing.js';
-const store={id:'store',active:1,permissions:['purchasing.view','purchasing.create','purchasing.edit']},owner={id:'owner',active:1,permissions:[...store.permissions,'purchasing.approve']};
+const store={id:'store',active:1,permissions:['purchasing.view','purchasing.create','purchasing.edit']},owner={id:'owner',role:'owner',active:1,permissions:[...store.permissions,'purchasing.approve']};
 function setup(){const db=createDatabase(':memory:');db.exec("INSERT INTO users(id,name,email,password,role) VALUES('store','Store','s@invalid','disabled','store'),('owner','Owner','o@invalid','disabled','owner'),('other','Other','x@invalid','disabled','store');INSERT INTO inventory(id,name,sku) VALUES(1,'Item','SKU'),(2,'Second','SECOND')");return db;}
 const body={title:'Demo',department:'Demo',needed:'2099-01-01',priority:'Normal',reason:'Demo',items:[{item_id:1,quantity:3,price:2},{item_id:2,quantity:4,price:3}],action:'submit'};
 function order(db){const r=savePurchasing(db,'purchasing/requests',body,store).after;savePurchasing(db,'purchasing/requests',{id:r.id,action:'approve'},owner);return savePurchasing(db,'purchasing/orders',{action:'convert',request_id:r.id},store).after;}

@@ -1,3 +1,4 @@
+import {extraPaths,listExtras,saveExtras} from '../../../lib/purchasing-extras.js';
 import {listPurchasing,savePurchasing} from '../../../lib/purchasing.js';
 import {NextResponse} from 'next/server';
 import {cookies} from 'next/headers';
@@ -48,6 +49,7 @@ if(!user?.active)return response({error:'سجّل الدخول أولًا'},401)
 const permissions=JSON.parse(user.permissions);
 if(path==='me')return response({user:{id:user.id,name:user.name,role:user.role},permissions,demo:isDemo});
 if(path==='logout'&&method==='POST'){db.prepare('DELETE FROM sessions WHERE token=?').run(sessionToken);if(isDemo)jar.delete('clinic_demo');else jar.delete('clinic_session');return response({ok:true});}
+if(extraPaths.includes(path)){const actor={...user,permissions};try{if(method==='GET')return response(listExtras(db,path,actor));if(path==='purchasing/invoice-orders')return response({error:'للقراءة فقط'},403);const result=saveExtras(db,path,body,actor);return response(result.file?result:{ok:true});}catch(e){return response({error:e.message},400);}}
 if(path.startsWith('purchasing/')){if(!['purchasing/requests','purchasing/orders','purchasing/receipts','purchasing/catalog'].includes(path))return response({error:'المسار غير موجود'},404);const actor={...user,permissions};try{if(method==='GET')return response(listPurchasing(db,path,actor));if(['purchasing/catalog','purchasing/receipts'].includes(path))return response({error:'السجل للقراءة فقط'},403);savePurchasing(db,path,body,actor);return response({ok:true});}catch(e){return response({error:e.message},400);}}
 const mod=path.split('/')[0];const action=method==='GET'?'view':['approve','refund','discount'].includes(body.action)?'approve':body.id?'edit':'create';
 if(!allowed(user,permissions,mod,action))return response({error:'ليس لديك صلاحية لهذا الإجراء'},403);
