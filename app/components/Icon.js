@@ -1,4 +1,5 @@
 const paths={
+'inventory/batches':<><rect x="3" y="3" width="12" height="15" rx="2"/><path d="M6 7h6M6 11h4"/><circle cx="17" cy="17" r="5"/><path d="M17 14v3l2 1"/></>,
 'finance/policy':<><path d="M3 5h18M3 12h18M3 19h18"/><circle cx="8" cy="5" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="10" cy="19" r="2"/></>,
 'finance/cashbox':<><rect x="3" y="8" width="18" height="13" rx="2"/><path d="M7 8V3h10v5M3 14h18m-11 3h4"/></>,
 'finance/payments':<><path d="M3 7h18v14H3V7ZM6 3h12v4M7 12h10M7 16h4"/></>,
