@@ -1,4 +1,8 @@
 const paths={
+'purchasing-group':<><path d="M3 3h2l3 12h11l3-9H6M8 10h12"/><circle cx="10" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></>,
+'purchasing/requests':<><path d="M5 3h10l4 4v14H5ZM15 3v5h4M8 12h8M8 16h5"/></>,
+'purchasing/orders':<><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18m-14 4 3 3 6-5"/></>,
+'purchasing/receipts':<><path d="m3 7 9-4 9 4v12l-9 3-9-3ZM3 7l9 4 9-4M12 11v11M8 15l2 2 4-4"/></>,
 'inventory/batches':<><rect x="3" y="3" width="12" height="15" rx="2"/><path d="M6 7h6M6 11h4"/><circle cx="17" cy="17" r="5"/><path d="M17 14v3l2 1"/></>,
 'finance/policy':<><path d="M3 5h18M3 12h18M3 19h18"/><circle cx="8" cy="5" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="10" cy="19" r="2"/></>,
 'finance/cashbox':<><rect x="3" y="8" width="18" height="13" rx="2"/><path d="M7 8V3h10v5M3 14h18m-11 3h4"/></>,
