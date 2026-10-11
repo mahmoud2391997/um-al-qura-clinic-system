@@ -1,3 +1,6 @@
+import {exportRows,toCsv} from '../../../lib/exports.js';
+import {rescheduleAppointment} from '../../../lib/appointment-workflow.js';
+import {tickAutomation,saveAutomation} from '../../../lib/automation.js';
 import {extraPaths,listExtras,saveExtras} from '../../../lib/purchasing-extras.js';
 import {listPurchasing,savePurchasing} from '../../../lib/purchasing.js';
 import {NextResponse} from 'next/server';
@@ -47,8 +50,12 @@ if(path==='login'&&method==='POST'){
 const user=db.prepare('SELECT u.id,u.name,u.email,u.role,u.active,r.permissions FROM sessions s JOIN users u ON u.id=s.user_id JOIN roles r ON r.id=u.role WHERE s.token=? AND s.expires>?').get(sessionToken||'',Date.now());
 if(!user?.active)return response({error:'سجّل الدخول أولًا'},401);
 const permissions=JSON.parse(user.permissions);
+if(req.method==='GET')tickAutomation(db);
+if(path==='finance/staff'){if(method!=='GET'||!allowed(user,permissions,'finance','view'))return response({error:'صلاحية المالية مطلوبة'},403);return response(db.prepare("SELECT id,name FROM users WHERE active=1 AND role IN ('doctor','physio','physio_lead')").all());}
+if(['tasks/alerts','tasks/recurring','tasks/policy','tasks/escalations','tasks/staff'].includes(path)){if(!allowed(user,permissions,'tasks','view'))return response({error:'صلاحية المهام مطلوبة'},403);if(method==='POST'){if(!['tasks/recurring','tasks/policy'].includes(path))return response({error:'للقراءة فقط'},403);try{return response(saveAutomation(db,path,body,user))}catch(e){return response({error:e.message},400);}}if(path==='tasks/alerts')return response(db.prepare('SELECT * FROM alerts ORDER BY id DESC').all().filter(a=>permissions.includes(a.module+'.view')&&(user.role==='owner'||a.owner===user.id)));if(path==='tasks/staff')return response(db.prepare('SELECT id,name FROM users WHERE active=1').all());if(path==='tasks/escalations')return response(db.prepare('SELECT e.*,t.title FROM task_escalations e JOIN tasks t ON t.id=e.task_id WHERE e.owner=? OR t.owner=?').all(user.id,user.id));if(user.role!=='owner')return response({error:'الإعدادات للمالك'},403);return response(db.prepare('SELECT * FROM '+(path==='tasks/policy'?'automation_policy':'recurring_tasks')+' ORDER BY id DESC').all());}
 if(path==='me')return response({user:{id:user.id,name:user.name,role:user.role},permissions,demo:isDemo});
 if(path==='logout'&&method==='POST'){db.prepare('DELETE FROM sessions WHERE token=?').run(sessionToken);if(isDemo)jar.delete('clinic_demo');else jar.delete('clinic_session');return response({ok:true});}
+if(path==='reports/export'&&method==='POST'){try{return response({csv:toCsv(exportRows(db,String(body.path),{...user,permissions}))})}catch(e){return response({error:e.message},403)}}
 if(extraPaths.includes(path)){const actor={...user,permissions};try{if(method==='GET')return response(listExtras(db,path,actor));if(path==='purchasing/invoice-orders')return response({error:'للقراءة فقط'},403);const result=saveExtras(db,path,body,actor);return response(result.file?result:{ok:true});}catch(e){return response({error:e.message},400);}}
 if(path.startsWith('purchasing/')){if(!['purchasing/requests','purchasing/orders','purchasing/receipts','purchasing/catalog'].includes(path))return response({error:'المسار غير موجود'},404);const actor={...user,permissions};try{if(method==='GET')return response(listPurchasing(db,path,actor));if(['purchasing/catalog','purchasing/receipts'].includes(path))return response({error:'السجل للقراءة فقط'},403);savePurchasing(db,path,body,actor);return response({ok:true});}catch(e){return response({error:e.message},400);}}
 const mod=path.split('/')[0];const action=method==='GET'?'view':['approve','refund','discount'].includes(body.action)?'approve':body.id?'edit':'create';
@@ -58,7 +65,7 @@ if(mod==='finance'&&method==='POST'){try{enforceFinanceLimit(db,body,user.role==
 if(path==='reports/integrations'&&user.role!=='owner')return response({error:'سجل التكاملات مخصص للمالك'},403);
 if(path==='finance/cashbox'&&method==='POST'&&!allowed(user,permissions,'finance','approve'))return response({error:'إقفال الصندوق يحتاج صلاحية اعتماد المالية'},403);
 if(operationPages[path]){
- if(method==='GET')return response(listOperations(db,path,permissions));
+ if(method==='GET'){const rows=listOperations(db,path,permissions);return response(path==='clinical/progress'&&['doctor','physio','physio_lead'].includes(user.role)?rows.filter(r=>r.provider===user.id):rows);}
  if(path==='inventory/movements'&&body.kind==='Adjustment'&&!allowed(user,permissions,'inventory','approve'))return response({error:'تسوية المخزون تحتاج صلاحية اعتماد'},403);
  try{const result=saveOperation(db,path,body,user.id);audit(user.id,path+'.'+(body.action||'save'),String(result.after.id||body.id||'new'),result.before,result.after);return response({ok:true});}catch(e){return response({error:e.message},400);}
 }
@@ -92,6 +99,7 @@ if(mod==='patients'){
 }
 if(mod==='appointments'){
  if(method==='GET')return response(db.prepare('SELECT a.*,p.name patient FROM appointments a JOIN patients p ON p.id=a.patient_id ORDER BY start').all());
+ if(body.id&&body.action==='reschedule'){try{rescheduleAppointment(db,body,user.id);return response({ok:true})}catch(e){return response({error:e.message},400)}}
  if(body.id){const before=db.prepare('SELECT * FROM appointments WHERE id=?').get(body.id);if(!before)return response({error:'الموعد غير موجود'},404);if(!['Pending','Confirmed','Arrived','Waiting','In Service','Completed','Cancelled','No show'].includes(body.status))return response({error:'حالة غير صحيحة'},400);if(['Cancelled','No show'].includes(body.status)&&!body.reason)return response({error:'سبب الإلغاء أو عدم الحضور مطلوب'},400);transaction(db,()=>{if(body.package_id)linkPackage(db,body.id,body.package_id);if(body.status==='Completed')consumePackage(db,body.id);db.prepare(`UPDATE appointments SET status=?,reason=?,arrived=CASE WHEN ?='Arrived' THEN CURRENT_TIMESTAMP ELSE arrived END,started=CASE WHEN ?='In Service' THEN CURRENT_TIMESTAMP ELSE started END,completed=CASE WHEN ?='Completed' THEN CURRENT_TIMESTAMP ELSE completed END WHERE id=?`).run(body.status,body.reason||'',body.status,body.status,body.status,body.id);});audit(user.id,'appointments.status',String(body.id),before,body);return response({ok:true});}
  if(!body.patient_id||!body.provider||!body.start||!body.end||Date.parse(body.end)<=Date.parse(body.start))return response({error:'راجع المريض والممارس ووقت البداية والنهاية'},400);
  const conflict=db.prepare(`SELECT id FROM appointments WHERE status NOT IN ('Cancelled','No show') AND start<? AND end>? AND (provider=? OR (room<>'' AND room=?))`).get(body.end,body.start,body.provider,body.room||'');if(conflict)return response({error:'تعارض في الممارس أو الغرفة'},409);
@@ -112,9 +120,9 @@ if(mod==='finance'){
  const amount=Number(body.amount);if(!body.patient_id||!body.service||!Number.isFinite(amount)||amount<=0)return response({error:'راجع بيانات الفاتورة'},400);db.prepare('INSERT INTO invoices(patient_id,service,amount) VALUES(?,?,?)').run(body.patient_id,body.service,amount);audit(user.id,'finance.invoice','new',null,body);return response({ok:true});
 }
 if(mod==='tasks'){
- if(method==='GET')return response(db.prepare('SELECT * FROM tasks ORDER BY due').all());
- if(body.id){if(body.status==='Completed'&&!body.evidence)return response({error:'دليل الإتمام مطلوب'},400);if(!['Open','In Progress','Waiting','Completed','Cancelled'].includes(body.status))return response({error:'حالة غير صحيحة'},400);db.prepare('UPDATE tasks SET status=?,evidence=? WHERE id=?').run(body.status,body.evidence||'',body.id);}
- else {if(!body.title||!body.owner||!body.due)return response({error:'العنوان والمسؤول والاستحقاق مطلوبون'},400);db.prepare('INSERT INTO tasks(title,owner,due,priority) VALUES(?,?,?,?)').run(body.title,body.owner,body.due,body.priority||'Normal');}audit(user.id,'tasks.save',String(body.id||'new'),null,body);return response({ok:true});
+ if(method==='GET')return response(db.prepare('SELECT t.*,u.name owner_name,CASE WHEN e.task_id IS NULL THEN 0 ELSE 1 END escalated FROM tasks t LEFT JOIN users u ON u.id=t.owner LEFT JOIN task_escalations e ON e.task_id=t.id WHERE ? OR t.owner=? OR e.owner=? ORDER BY due').all(Number(user.role==='owner'||permissions.includes('tasks.approve')),user.id,user.id));
+ if(body.id){const task=db.prepare('SELECT * FROM tasks WHERE id=?').get(body.id);if(!task||(task.owner!==user.id&&user.role!=='owner'&&!permissions.includes('tasks.approve')))return response({error:'المهمة غير متاحة للتعديل'},403);if(body.status==='Completed'&&!body.evidence)return response({error:'دليل الإتمام مطلوب'},400);if(!['Open','In Progress','Waiting','Completed','Cancelled'].includes(body.status))return response({error:'حالة غير صحيحة'},400);db.prepare('UPDATE tasks SET status=?,evidence=? WHERE id=?').run(body.status,body.evidence||'',body.id);}
+ else {if(!body.title||!db.prepare('SELECT id FROM users WHERE id=? AND active=1').get(body.owner)||!body.due)return response({error:'العنوان والمسؤول والاستحقاق مطلوبون'},400);db.prepare('INSERT INTO tasks(title,owner,due,priority) VALUES(?,?,?,?)').run(body.title,body.owner,body.due,body.priority||'Normal');}audit(user.id,'tasks.save',String(body.id||'new'),null,body);return response({ok:true});
 }
 return response({error:'غير متاح'},404);
 }catch(e){console.error(e);return response({error:'تعذر تنفيذ الطلب؛ راجع البيانات وحاول مجددًا'},400);}
