@@ -1,4 +1,12 @@
 const paths={
+'finance/session-billing':<><path d="M3 4h7v16H3ZM14 4h7v16h-7M7 8h10M7 12h10M7 16h10"/></>,
+'finance/approvals':<><path d="M3 3h13v18H3ZM7 7h5M7 11h5m5 4 2 2 3-4"/></>,
+'finance/cash-corrections':<><path d="M4 4h16v16H4ZM8 8h8M8 12h3m4 3 3-3 3 3M18 12v8"/></>,
+'patients/attachments':<><path d="M5 3h10l4 4v14H5ZM15 3v5h4M8 12h8M8 16h5"/></>,
+'clinical/attachments':<><path d="M4 3h16v18H4ZM12 7v8M8 11h8M7 18h10"/></>,
+'compliance/attachments':<><path d="M3 5h7l2 3h9v13H3ZM8 13h8m-8 4h5"/></>,
+'clinical/templates':<><path d="M4 3h12v18H4ZM8 7h4M8 11h4M19 6v12m-2-3 2 3 2-3"/></>,
+'clinical/home-followup':<><path d="m2 11 10-9 10 9M5 10v11h14V10m-10 5 2 2 4-4"/></>,
 'clinical/progress':<><path d="M3 3v18h18M6 16l4-5 4 2 6-8"/><circle cx="10" cy="11" r="1"/></>,
 'finance/rates':<><circle cx="9" cy="8" r="4"/><path d="M2 21v-3a7 7 0 0 1 10-6"/><circle cx="18" cy="17" r="5"/><path d="M18 14v3l2 1"/></>,
 'finance/session-costs':<><path d="M4 3h16v18H4ZM7 7h10M7 11h3M14 11h3M7 16h3M14 16h3"/></>,
