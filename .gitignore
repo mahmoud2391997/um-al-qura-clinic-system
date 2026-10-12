@@ -6,3 +6,7 @@ data/
 # Local preview captures
 /*.png
 .DS_Store
+
+# Encrypted clinic backups
+*.uqb
+backups/

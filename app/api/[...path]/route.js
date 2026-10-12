@@ -1,3 +1,7 @@
+import {runScheduledAutomation,automationRunAuthorized} from '../../../lib/automation-runner.js';
+import {requestPasswordReset,completePasswordReset,configuredEmailDelivery} from '../../../lib/password-recovery.js';
+import {correctFinancialRecord} from '../../../lib/financial-corrections.js';
+import {returnPackageSession} from '../../../lib/package-returns.js';
 import {roleScopes,scopeRows,assignedScope,patientVisible,saveRoleScopes} from '../../../lib/data-scopes.js';
 import {financeRequest,correctCashClosure} from '../../../lib/finance-workflow.js';
 import {loginAllowed,loginFailure,loginSuccess,revokeSessions} from '../../../lib/auth-security.js';
@@ -26,6 +30,7 @@ const response=(x,status=200)=>NextResponse.json(x,{status});
 async function handle(req,{params}){
 try{
 const path=(await params).path.join('/');const method=req.method;
+if(path==='automation/run'){const authorization=req.headers.get('authorization'),secret=process.env.CLINIC_AUTOMATION_SECRET;if(method!=='POST'||!automationRunAuthorized(authorization,secret))return response({error:'غير مصرح'},403);try{return response(runScheduledAutomation(mainDb,authorization,secret,process.env.CLINIC_DEMO_ONLY!=='1'&&process.env.VERCEL!=='1'&&process.env.CLINIC_DB!==':memory:'))}catch(e){return response({error:e.message},503)}}
 if(process.env.CLINIC_DEMO_ONLY==='1'&&['setup','login'].includes(path)){if(path==='setup'&&method==='GET')return response({needed:false});return response({error:'النسخة المنشورة للديمو فقط؛ استخدم استعراض الديمو بدون تسجيل'},403);}
 if(method==='POST'&&(!req.headers.get('origin')||new URL(req.headers.get('origin')).host!==req.headers.get('host')))return response({error:'مصدر الطلب غير مسموح'},403);
 const body=method==='POST'?await req.json():{};const jar=await cookies();
@@ -47,6 +52,8 @@ if(path==='setup'&&method==='POST'){
  if(!body.name||!body.email||!body.password||body.password.length<12)return response({error:'أدخل الاسم والبريد وكلمة مرور 12 حرفًا على الأقل'},400);
  const id=randomUUID();db.prepare('INSERT INTO users(id,name,email,password,role) VALUES(?,?,?,?,?)').run(id,body.name,body.email.toLowerCase(),hashPassword(body.password),'owner');audit(id,'setup','users',null,{id,name:body.name});return response({ok:true});
 }
+if(path==='password/request-reset'&&method==='POST'){if(isDemo)return response({error:'استعادة البريد غير مفعلة في الديمو'},503);const deliver=configuredEmailDelivery();if(!deliver)return response({error:'خدمة البريد غير مفعلة؛ اطلب إعادة التعيين من مالك المجمع'},503);try{const email=String(body.email||'').trim().toLowerCase().slice(0,254),key='reset:'+email;if(!loginAllowed(db,key))return response({error:'طلبات كثيرة؛ حاول بعد ربع ساعة'},429);loginFailure(db,key);await requestPasswordReset(db,email,deliver);return response({ok:true})}catch(e){return response({error:e.message},400)}}
+if(path==='password/reset'&&method==='POST'){if(isDemo)return response({error:'استعادة البريد غير مفعلة في الديمو'},503);try{const result=completePasswordReset(db,body.token,body.password,hashPassword);audit(result.user_id,'users.password.reset',result.user_id,null,{sessionsRevoked:true});jar.delete('clinic_session');return response({ok:true})}catch(e){return response({error:e.message},400)}}
 if(path==='login'&&method==='POST'){
  const email=String(body.email||'').trim().toLowerCase().slice(0,254);if(!loginAllowed(db,email))return response({error:'محاولات الدخول كثيرة؛ حاول بعد ربع ساعة'},429);
  const u=db.prepare('SELECT * FROM users WHERE email=? AND active=1').get(email);
@@ -65,12 +72,14 @@ const documentPath=path.replace(/\/targets$/,'');if(documentPaths.includes(docum
 if(path==='reports/export'&&method==='POST'){try{return response({csv:toCsv(exportRows(db,String(body.path),{...user,permissions}))})}catch(e){return response({error:e.message},403)}}
 if(extraPaths.includes(path)){const actor={...user,permissions};try{if(method==='GET')return response(listExtras(db,path,actor));if(path==='purchasing/invoice-orders')return response({error:'للقراءة فقط'},403);const result=saveExtras(db,path,body,actor);return response(result.file?result:{ok:true});}catch(e){return response({error:e.message},400);}}
 if(path.startsWith('purchasing/')){if(!['purchasing/requests','purchasing/orders','purchasing/receipts','purchasing/catalog'].includes(path))return response({error:'المسار غير موجود'},404);const actor={...user,permissions};try{if(method==='GET')return response(listPurchasing(db,path,actor));if(['purchasing/catalog','purchasing/receipts'].includes(path))return response({error:'السجل للقراءة فقط'},403);savePurchasing(db,path,body,actor);return response({ok:true});}catch(e){return response({error:e.message},400);}}
-const mod=path.split('/')[0];const action=method==='GET'?'view':(['approve','refund','discount'].includes(body.action)||path==='finance/approvals'&&body.action==='reject')?'approve':body.id?'edit':'create';
+const mod=path.split('/')[0];const action=method==='GET'?'view':(['approve','refund','discount'].includes(body.action)||['finance/approvals','finance/package-returns','finance/corrections'].includes(path)&&body.action==='reject')?'approve':body.id?'edit':'create';
 if(!allowed(user,permissions,mod,action))return response({error:'ليس لديك صلاحية لهذا الإجراء'},403);
 if(path==='finance/policy'&&user.role!=='owner')return response({error:'ضبط الحدود المالية مخصص لمالك المجمع'},403);
 if(mod==='finance'&&method==='POST'){try{enforceFinanceLimit(db,body,user.role==='owner')}catch(e){return response({error:e.message},403);}}
 if(path==='reports/integrations'&&user.role!=='owner')return response({error:'سجل التكاملات مخصص للمالك'},403);
 if(path==='finance/cashbox'&&method==='POST'&&!allowed(user,permissions,'finance','approve'))return response({error:'إقفال الصندوق يحتاج صلاحية اعتماد المالية'},403);
+if(path==='finance/corrections'){try{if(method==='POST')return response(correctFinancialRecord(db,body,{...user,permissions}));return response(db.prepare('SELECT id,kind,source_id,reason,creator,status,reviewer,decision,compensation_id,time FROM financial_corrections WHERE ? OR creator=? ORDER BY id DESC').all(Number(user.role==='owner'||permissions.includes('finance.approve')),user.id));}catch(e){return response({error:e.message},400)}}
+if(path==='finance/package-returns'){try{if(method==='POST')return response(returnPackageSession(db,body,{...user,permissions}));return response(db.prepare('SELECT * FROM package_returns WHERE ? OR creator=? ORDER BY id DESC').all(Number(user.role==='owner'||permissions.includes('finance.approve')),user.id));}catch(e){return response({error:e.message},400)}}
 if(path==='finance/approvals'){try{if(method==='POST')return response(financeRequest(db,body,{...user,permissions}));return response(db.prepare('SELECT * FROM finance_requests WHERE ? OR creator=? ORDER BY id DESC').all(Number(user.role==='owner'||permissions.includes('finance.approve')),user.id));}catch(e){return response({error:e.message},400)}}
 if(path==='finance/cash-corrections'&&method==='POST'){try{return response(correctCashClosure(db,body,{...user,permissions}))}catch(e){return response({error:e.message},400)}}
 if(path==='clinical/templates'&&method==='POST'&&user.role!=='owner'&&!['doctor','physio','physio_lead'].includes(user.role))return response({error:'إعداد القالب للمالك أو الممارس المؤهل'},403);

@@ -1,4 +1,6 @@
 const paths={
+'finance/corrections':<><path d="M3 5h14v14H3ZM7 9h6M7 13h3M19 5v14m-2-3 2 3 2-3"/></>,
+'finance/package-returns':<><path d="M4 4h14v16H4M9 8l-4 4 4 4M5 12h16"/></>,
 'finance/session-billing':<><path d="M3 4h7v16H3ZM14 4h7v16h-7M7 8h10M7 12h10M7 16h10"/></>,
 'finance/approvals':<><path d="M3 3h13v18H3ZM7 7h5M7 11h5m5 4 2 2 3-4"/></>,
 'finance/cash-corrections':<><path d="M4 4h16v16H4ZM8 8h8M8 12h3m4 3 3-3 3 3M18 12v8"/></>,
