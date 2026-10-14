@@ -15,6 +15,20 @@ jobs:
       CLINIC_DB: ':memory:'
       CLINIC_DEMO: '1'
       CLINIC_DEMO_ONLY: '1'
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: clinic
+          POSTGRES_PASSWORD: disposable-ci-only
+          POSTGRES_DB: clinic_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U clinic -d clinic_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -23,4 +37,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - run: node --test tests/postgres.test.js
+        env:
+          CLINIC_TEST_POSTGRES: '1'
+          DATABASE_URL: postgresql://clinic:disposable-ci-only@127.0.0.1:5432/clinic_test
       - run: npm run build

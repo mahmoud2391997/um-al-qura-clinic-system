@@ -1,0 +1,32 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import pg from 'pg';
+import {randomUUID} from 'node:crypto';
+import {PostgresDatabase,translateQuery} from '../lib/postgres.js';
+import {postgresSchema} from '../lib/postgres-schema.js';
+import {defaultRoles} from '../lib/permissions.js';
+import {recordPayment} from '../lib/finance.js';
+import {savePurchasing} from '../lib/purchasing.js';
+import {listOperations} from '../lib/operations.js';
+import {operationPages} from '../lib/operations-config.js';
+import {approveClinicalSession} from '../lib/session-resources.js';
+const enabled=process.env.CLINIC_TEST_POSTGRES==='1';
+const owner={id:'o',role:'owner',active:1,permissions:defaultRoles.find(r=>r[0]==='owner')[2]};
+const store={id:'s',role:'store',active:1,permissions:defaultRoles.find(r=>r[0]==='store')[2]};
+async function fixture(fn){const url=new URL(process.env.DATABASE_URL);assert(['localhost','127.0.0.1'].includes(url.hostname),'Postgres tests only run against localhost');const client=new pg.Client({connectionString:url.toString()});await client.connect();const schema='clinic_test_'+randomUUID().replaceAll('-','');try{await client.query('BEGIN');await client.query('CREATE SCHEMA '+schema);await client.query('SET LOCAL search_path TO '+schema);await client.query(postgresSchema);const db=new PostgresDatabase(client);for(const [id,name,p]of defaultRoles)await db.prepare('INSERT INTO roles VALUES(?,?,?)').run(id,name,JSON.stringify(p));await db.exec("INSERT INTO users(id,name,email,password,role) VALUES('o','Owner','o@invalid','disabled','owner'),('s','Store','s@invalid','disabled','store'),('p','Provider','p@invalid','disabled','physio');INSERT INTO patients(name,phone) VALUES('Synthetic patient','DEMO');INSERT INTO purchasing_policy(id) VALUES(1);INSERT INTO automation_policy(id) VALUES(1);INSERT INTO finance_policy VALUES(1,0,0)");await fn(db,client);}finally{await client.query('ROLLBACK');await client.end();}}
+test('Postgres translator preserves quoted question marks and boolean predicates',()=>{assert.equal(translateQuery("SELECT '?' name WHERE ? OR id=?"),"SELECT '?' name WHERE ($1::bigint <> 0) OR id=$2");});
+test('PostgreSQL native schema supports every operation page', {skip:!enabled},async()=>fixture(async db=>{for(const path of Object.keys(operationPages))await listOperations(db,path,owner.permissions,owner);assert.equal((await db.prepare('SELECT COUNT(*) n FROM roles').get()).n,13);}));
+test('PostgreSQL collection rollback and supplier receipt are atomic and idempotent',{skip:!enabled},async()=>fixture(async db=>{
+ const invoice=(await db.prepare('INSERT INTO invoices(patient_id,amount,paid) VALUES(1,100,0)').run()).lastInsertRowid;
+ await recordPayment(db,{id:invoice,payment:40,method:'Card'},'o');await assert.rejects(()=>recordPayment(db,{id:invoice,payment:70,method:'Card'},'o'));
+ assert.equal((await db.prepare('SELECT paid FROM invoices WHERE id=?').get(invoice)).paid,40);
+ const item=(await db.prepare("INSERT INTO inventory(name,sku) VALUES('Test','TEST')").run()).lastInsertRowid;
+ const request=(await savePurchasing(db,'purchasing/requests',{title:'Test',department:'Test',needed:'2099-01-01',priority:'Normal',reason:'Synthetic',action:'submit',items:[{item_id:item,quantity:3,price:2}]},store)).after;
+ await savePurchasing(db,'purchasing/requests',{id:request.id,action:'approve'},owner);
+ const order=(await savePurchasing(db,'purchasing/orders',{action:'convert',request_id:request.id},store)).after;
+ const body={id:order.id,action:'receive',item_id:item,quantity:2,batch_number:'B1',batch_expiry:'2099-01-01',idempotency_key:'receipt'};
+ await savePurchasing(db,'purchasing/orders',body,store);await savePurchasing(db,'purchasing/orders',body,store);
+ await assert.rejects(()=>savePurchasing(db,'purchasing/orders',{...body,quantity:2,idempotency_key:'receipt2'},store));
+ assert.equal((await db.prepare('SELECT quantity FROM inventory WHERE id=?').get(item)).quantity,2);
+ assert.equal((await db.prepare('SELECT COUNT(*) n FROM purchase_receipts').get()).n,1);
+}));

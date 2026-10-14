@@ -1,9 +1,12 @@
 // Runs only against a disposable demo instance. Never use clinic patient data.
 import assert from 'node:assert/strict';
-const base=process.env.CLINIC_ACCEPTANCE_BASE||'http://127.0.0.1:3031';const origin=new URL(base).origin;let checks=0;
+import {readFileSync} from 'node:fs';
+const real=process.env.CLINIC_ACCEPTANCE_REAL==='1';
+const accounts=real?JSON.parse(readFileSync('.local/postgres-test-accounts.json','utf8')):null;
+const base=process.env.CLINIC_ACCEPTANCE_BASE||'http://127.0.0.1:3031';const origin=new URL(base).origin;let checks=0;if(real&&!['127.0.0.1','localhost'].includes(new URL(base).hostname))throw Error('Persistent acceptance is only allowed on localhost');
 async function raw(path,body,cookie){return fetch(origin+'/api/'+path,{method:body?'POST':'GET',headers:{Origin:origin,'Content-Type':'application/json',...(cookie?{Cookie:cookie}:{})},body:body?JSON.stringify(body):undefined});}
 async function api(path,body,cookie){const r=await raw(path,body,cookie),x=await r.json();assert.equal(r.ok,true,path+': '+(x.error||r.status));return x;}
-async function demo(role){const r=await raw('demo',{role});assert.equal(r.ok,true);const cookie=r.headers.get('set-cookie')?.split(';')[0];assert.ok(cookie);const me=await api('me',null,cookie);assert.equal(me.demo,true,'Acceptance requires an isolated demo database');return cookie;}
+async function demo(role){const r=await raw(real?'login':'demo',real?accounts[role]:{role});assert.equal(r.ok,true);const cookie=r.headers.getSetCookie().find(v=>v.startsWith(real?'clinic_session=':'clinic_demo='))?.split(';')[0];assert.ok(cookie);const me=await api('me',null,cookie);assert.equal(me.demo,!real,'Acceptance must use the selected isolated environment');return cookie;}
 try{
  const owner=await demo('owner'),physio=await demo('physio'),finance=await demo('finance'),assistant=await demo('assistant');const marker='DEMO-ACCEPTANCE-'+Date.now();
  await api('patients',{name:'مريض اختبار قبول وهمي',phone:marker,gender:'male',source:'Other'},owner);const patient=(await api('patients',null,owner)).find(p=>p.phone===marker);assert.ok(patient);checks++;
@@ -19,5 +22,5 @@ try{
  const program=await note('Home Program',{instructions:'Demo',duration:'Demo',review:day,exercises:[{name:'Demo',dose:'Demo',frequency:'Demo',instructions:'Demo',url:''}]});await api('clinical/home-followup',{program_id:program.id,date:day,completed:1,planned:2,note:'Demo'},physio);checks++;
  const file={target_id:patient.id,name:'acceptance.pdf',mime:'application/pdf',data:Buffer.from('%PDF-1.4\n%%EOF').toString('base64')};await api('clinical/attachments',file,physio);const attachment=(await api('clinical/attachments',null,physio)).find(r=>r.target_id===patient.id);assert.equal((await raw('clinical/attachments',{id:attachment.id,action:'download'},assistant)).ok,false);checks++;
  await note('Discharge',{outcome:'Demo',discharge_reason:'Demo',recommendations:'Demo'});assert.equal((await api('clinical/progress',null,physio)).find(r=>r.title===episode).status,'Closed');assert.equal((await raw('clinical',{patient_id:patient.id,episode,kind:'Session',content:'Demo',structured:{minutes:30}},physio)).ok,false);checks++;
- console.log('Acceptance passed: '+checks+' journey checks on disposable demo data.');
+ console.log('Acceptance passed: '+checks+' journey checks on isolated synthetic data.');
 }catch(e){console.error('Acceptance failed: '+e.message);process.exitCode=1;}

@@ -1,0 +1,2 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {bootstrapAuthorized} from '../lib/bootstrap.js';
+test('production owner bootstrap requires a strong server secret and exact token',()=>{assert.equal(bootstrapAuthorized('anything',undefined),false);assert.equal(bootstrapAuthorized('short','short'),false);const secret='s'.repeat(48);assert.equal(bootstrapAuthorized(secret,secret),true);assert.equal(bootstrapAuthorized(secret+'x',secret),false);});

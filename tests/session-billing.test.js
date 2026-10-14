@@ -1,2 +1,36 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {createDatabase} from '../lib/db.js';import {linkSessionBilling,sessionIncome} from '../lib/session-billing.js';
-test('session revenue apportions net collected without duplication and rejects cross-patient or over-allocation',()=>{const db=createDatabase(':memory:');db.exec("INSERT INTO users(id,name,email,password,role) VALUES('f','Demo','f@invalid','disabled','finance');INSERT INTO patients(id,name,phone) VALUES(1,'Demo','DEMO'),(2,'Other','DEMO2');INSERT INTO invoices(id,patient_id,amount,paid) VALUES(1,1,100,60),(2,2,100,0);INSERT INTO clinical(id,patient_id,kind,approved) VALUES(1,1,'Session',1),(2,1,'Session',1),(3,1,'Session',1)");const body={clinical_id:1,invoice_id:1,amount:50};linkSessionBilling(db,body,'f');linkSessionBilling(db,body,'f');assert.equal(sessionIncome(db,1).revenue,30);assert.equal(db.prepare('SELECT COUNT(*) n FROM session_billing').get().n,1);assert.throws(()=>linkSessionBilling(db,{clinical_id:2,invoice_id:2,amount:50},'f'));assert.throws(()=>linkSessionBilling(db,{clinical_id:2,invoice_id:1,amount:60},'f'));linkSessionBilling(db,{clinical_id:2,invoice_id:1,amount:50},'f');db.exec('UPDATE invoices SET amount=80,paid=40');assert.equal(sessionIncome(db,1).revenue+sessionIncome(db,2).revenue,40);assert.equal(sessionIncome(db,3).revenue,null);db.close();});
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createDatabase } from '../lib/db.js';
+import { linkSessionBilling, sessionIncome } from '../lib/session-billing.js';
+test('session revenue apportions net collected without duplication and rejects cross-patient or over-allocation', async () => {
+  const db = createDatabase(':memory:');
+  await db.exec("INSERT INTO users(id,name,email,password,role) VALUES('f','Demo','f@invalid','disabled','finance');INSERT INTO patients(id,name,phone) VALUES(1,'Demo','DEMO'),(2,'Other','DEMO2');INSERT INTO invoices(id,patient_id,amount,paid) VALUES(1,1,100,60),(2,2,100,0);INSERT INTO clinical(id,patient_id,kind,approved) VALUES(1,1,'Session',1),(2,1,'Session',1),(3,1,'Session',1)");
+  const body = {
+    clinical_id: 1,
+    invoice_id: 1,
+    amount: 50
+  };
+  await linkSessionBilling(db, body, 'f');
+  await linkSessionBilling(db, body, 'f');
+  assert.equal((await sessionIncome(db, 1)).revenue, 30);
+  assert.equal((await db.prepare('SELECT COUNT(*) n FROM session_billing').get()).n, 1);
+  await assert.rejects(async () => await linkSessionBilling(db, {
+    clinical_id: 2,
+    invoice_id: 2,
+    amount: 50
+  }, 'f'));
+  await assert.rejects(async () => await linkSessionBilling(db, {
+    clinical_id: 2,
+    invoice_id: 1,
+    amount: 60
+  }, 'f'));
+  await linkSessionBilling(db, {
+    clinical_id: 2,
+    invoice_id: 1,
+    amount: 50
+  }, 'f');
+  await db.exec('UPDATE invoices SET amount=80,paid=40');
+  assert.equal((await sessionIncome(db, 1)).revenue + (await sessionIncome(db, 2)).revenue, 40);
+  assert.equal((await sessionIncome(db, 3)).revenue, null);
+  db.close();
+});

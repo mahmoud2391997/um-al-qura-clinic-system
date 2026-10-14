@@ -1,9 +1,115 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {createDatabase} from '../lib/db.js';import {rescheduleAppointment,bookWaiting,sellPackage} from '../lib/appointment-workflow.js';import {approveClinicalSession} from '../lib/session-resources.js';import {exportRows,toCsv} from '../lib/exports.js';import {saveClinicalDetails} from '../lib/clinical.js';
-function setup(){const db=createDatabase(':memory:');db.exec("INSERT INTO users(id,name,email,password,role) VALUES('physio','Demo','p@invalid','disabled','physio');INSERT INTO patients(id,name,phone) VALUES(1,'Demo','DEMO');INSERT INTO appointments(id,patient_id,provider,start,end,room,service) VALUES(1,1,'physio','2026-10-11T10:00','2026-10-11T11:00','Room','Service'),(2,1,'physio','2026-10-11T12:00','2026-10-11T13:00','Room','Service');INSERT INTO waiting_list(id,patient_id,service,provider,desired,priority) VALUES(1,1,'Service','physio','2026-10-11','Normal');INSERT INTO packages(id,patient_id,service,total,expiry) VALUES(1,1,'Service',10,'2099-01-01')");return db;}
-test('reschedule conflict rolls back and waiting booking is idempotent',()=>{const db=setup();assert.throws(()=>rescheduleAppointment(db,{id:1,start:'2026-10-11T12:30',end:'2026-10-11T13:30',reason:'Move'},'physio'),/تعارض/);assert.equal(db.prepare('SELECT start FROM appointments WHERE id=1').get().start,'2026-10-11T10:00');const body={id:1,start:'2026-10-11T14:00',end:'2026-10-11T15:00',room:'Room'};bookWaiting(db,body,'physio');bookWaiting(db,body,'physio');assert.equal(db.prepare('SELECT COUNT(*) n FROM appointments').get().n,3);db.close();});
-test('package sale creates one invoice and never records a payment',()=>{const db=setup();sellPackage(db,{id:1,price:100},'physio');sellPackage(db,{id:1,price:100},'physio');assert.equal(db.prepare('SELECT COUNT(*) n FROM invoices').get().n,1);assert.equal(db.prepare('SELECT paid FROM invoices').get().paid,0);db.close();});
-test('session cost freezes recorded time and consumed batch valuation',()=>{const db=setup();db.exec("INSERT INTO inventory(id,name,sku,quantity,average_cost) VALUES(1,'Item','ITEM',5,2);INSERT INTO cost_rates(provider,hourly,overhead) VALUES('physio',20,3);INSERT INTO clinical(id,patient_id,provider,kind,episode,content) VALUES(1,1,'physio','Session','Episode','Demo')");saveClinicalDetails(db,1,{kind:'Session',structured:{minutes:30,items:[{id:1,quantity:2}]}},'physio');approveClinicalSession(db,1,'physio');assert.equal(db.prepare('SELECT total FROM clinical_costs').get().total,17);db.exec('UPDATE cost_rates SET hourly=100');approveClinicalSession(db,1,'physio');assert.equal(db.prepare('SELECT total FROM clinical_costs').get().total,17);db.close();});
-test('approved discharge closes an episode; new session cannot silently reopen it',()=>{const db=setup();db.exec("INSERT INTO clinical(id,patient_id,provider,kind,episode,content) VALUES(1,1,'physio','Discharge','Episode','Demo')");saveClinicalDetails(db,1,{kind:'Discharge',structured:{outcome:'Demo',discharge_reason:'Demo',recommendations:'Demo'}},'physio');approveClinicalSession(db,1,'physio');assert.equal(db.prepare('SELECT status FROM episodes').get().status,'Closed');db.exec("INSERT INTO clinical(id,patient_id,provider,kind,episode,content) VALUES(2,1,'physio','Session','Episode','Demo')");assert.throws(()=>saveClinicalDetails(db,2,{kind:'Session'},'physio'),/مغلقة/);db.close();});
-test('CSV avoids formula injection; export permission is enforced and passwords excluded',()=>{const db=setup();assert.ok(toCsv([{name:'=HYPERLINK("x")',amount:-2}]).includes("'=HYPERLINK"));assert.throws(()=>exportRows(db,'users',{active:1,permissions:['users.view']}),/التصدير/);const rows=exportRows(db,'users',{active:1,role:'owner',permissions:['users.view','users.export']});assert.equal(rows[0].password,undefined);db.close();});
-
-test('reschedule cannot bypass the original provider conflict with an extra field',()=>{const db=setup();assert.throws(()=>rescheduleAppointment(db,{id:1,start:'2026-10-11T12:30',end:'2026-10-11T13:30',room:'Other',provider:'fake',reason:'Move'},'physio'),/تعارض/);db.close();});
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createDatabase } from '../lib/db.js';
+import { rescheduleAppointment, bookWaiting, sellPackage } from '../lib/appointment-workflow.js';
+import { approveClinicalSession } from '../lib/session-resources.js';
+import { exportRows, toCsv } from '../lib/exports.js';
+import { saveClinicalDetails } from '../lib/clinical.js';
+async function setup() {
+  const db = createDatabase(':memory:');
+  await db.exec("INSERT INTO users(id,name,email,password,role) VALUES('physio','Demo','p@invalid','disabled','physio');INSERT INTO patients(id,name,phone) VALUES(1,'Demo','DEMO');INSERT INTO appointments(id,patient_id,provider,start,end,room,service) VALUES(1,1,'physio','2026-10-11T10:00','2026-10-11T11:00','Room','Service'),(2,1,'physio','2026-10-11T12:00','2026-10-11T13:00','Room','Service');INSERT INTO waiting_list(id,patient_id,service,provider,desired,priority) VALUES(1,1,'Service','physio','2026-10-11','Normal');INSERT INTO packages(id,patient_id,service,total,expiry) VALUES(1,1,'Service',10,'2099-01-01')");
+  return db;
+}
+test('reschedule conflict rolls back and waiting booking is idempotent', async () => {
+  const db = await setup();
+  await assert.rejects(async () => await rescheduleAppointment(db, {
+    id: 1,
+    start: '2026-10-11T12:30',
+    end: '2026-10-11T13:30',
+    reason: 'Move'
+  }, 'physio'), /تعارض/);
+  assert.equal((await db.prepare('SELECT start FROM appointments WHERE id=1').get()).start, '2026-10-11T10:00');
+  const body = {
+    id: 1,
+    start: '2026-10-11T14:00',
+    end: '2026-10-11T15:00',
+    room: 'Room'
+  };
+  await bookWaiting(db, body, 'physio');
+  await bookWaiting(db, body, 'physio');
+  assert.equal((await db.prepare('SELECT COUNT(*) n FROM appointments').get()).n, 3);
+  db.close();
+});
+test('package sale creates one invoice and never records a payment', async () => {
+  const db = await setup();
+  await sellPackage(db, {
+    id: 1,
+    price: 100
+  }, 'physio');
+  await sellPackage(db, {
+    id: 1,
+    price: 100
+  }, 'physio');
+  assert.equal((await db.prepare('SELECT COUNT(*) n FROM invoices').get()).n, 1);
+  assert.equal((await db.prepare('SELECT paid FROM invoices').get()).paid, 0);
+  db.close();
+});
+test('session cost freezes recorded time and consumed batch valuation', async () => {
+  const db = await setup();
+  await db.exec("INSERT INTO inventory(id,name,sku,quantity,average_cost) VALUES(1,'Item','ITEM',5,2);INSERT INTO cost_rates(provider,hourly,overhead) VALUES('physio',20,3);INSERT INTO clinical(id,patient_id,provider,kind,episode,content) VALUES(1,1,'physio','Session','Episode','Demo')");
+  await saveClinicalDetails(db, 1, {
+    kind: 'Session',
+    structured: {
+      minutes: 30,
+      items: [{
+        id: 1,
+        quantity: 2
+      }]
+    }
+  }, 'physio');
+  await approveClinicalSession(db, 1, 'physio');
+  assert.equal((await db.prepare('SELECT total FROM clinical_costs').get()).total, 17);
+  await db.exec('UPDATE cost_rates SET hourly=100');
+  await approveClinicalSession(db, 1, 'physio');
+  assert.equal((await db.prepare('SELECT total FROM clinical_costs').get()).total, 17);
+  db.close();
+});
+test('approved discharge closes an episode; new session cannot silently reopen it', async () => {
+  const db = await setup();
+  await db.exec("INSERT INTO clinical(id,patient_id,provider,kind,episode,content) VALUES(1,1,'physio','Discharge','Episode','Demo')");
+  await saveClinicalDetails(db, 1, {
+    kind: 'Discharge',
+    structured: {
+      outcome: 'Demo',
+      discharge_reason: 'Demo',
+      recommendations: 'Demo'
+    }
+  }, 'physio');
+  await approveClinicalSession(db, 1, 'physio');
+  assert.equal((await db.prepare('SELECT status FROM episodes').get()).status, 'Closed');
+  await db.exec("INSERT INTO clinical(id,patient_id,provider,kind,episode,content) VALUES(2,1,'physio','Session','Episode','Demo')");
+  await assert.rejects(async () => await saveClinicalDetails(db, 2, {
+    kind: 'Session'
+  }, 'physio'), /مغلقة/);
+  db.close();
+});
+test('CSV avoids formula injection; export permission is enforced and passwords excluded', async () => {
+  const db = await setup();
+  assert.ok(toCsv([{
+    name: '=HYPERLINK("x")',
+    amount: -2
+  }]).includes("'=HYPERLINK"));
+  await assert.rejects(async () => await exportRows(db, 'users', {
+    active: 1,
+    permissions: ['users.view']
+  }), /التصدير/);
+  const rows = await exportRows(db, 'users', {
+    active: 1,
+    role: 'owner',
+    permissions: ['users.view', 'users.export']
+  });
+  assert.equal(rows[0].password, undefined);
+  db.close();
+});
+test('reschedule cannot bypass the original provider conflict with an extra field', async () => {
+  const db = await setup();
+  await assert.rejects(async () => await rescheduleAppointment(db, {
+    id: 1,
+    start: '2026-10-11T12:30',
+    end: '2026-10-11T13:30',
+    room: 'Other',
+    provider: 'fake',
+    reason: 'Move'
+  }, 'physio'), /تعارض/);
+  db.close();
+});

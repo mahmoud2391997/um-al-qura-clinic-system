@@ -1,2 +1,15 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {automationRunAuthorized,runScheduledAutomation} from '../lib/automation-runner.js';import {createDatabase} from '../lib/db.js';
-test('scheduled automation requires strong configured secret and persistent storage readiness',()=>{const secret='a'.repeat(32),db=createDatabase(':memory:');assert.equal(automationRunAuthorized('Bearer '+secret,secret),true);assert.equal(automationRunAuthorized('Bearer wrong',secret),false);assert.equal(automationRunAuthorized('Bearer short','short'),false);assert.throws(()=>runScheduledAutomation(db,'Bearer '+secret,secret,false),/دائم/);assert.throws(()=>runScheduledAutomation(db,'Bearer wrong',secret,true),/مصرح/);runScheduledAutomation(db,'Bearer '+secret,secret,true);db.close();});
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { automationRunAuthorized, runScheduledAutomation } from '../lib/automation-runner.js';
+import { createDatabase } from '../lib/db.js';
+test('scheduled automation requires strong configured secret and persistent storage readiness', async () => {
+  const secret = 'a'.repeat(32),
+    db = createDatabase(':memory:');
+  assert.equal(automationRunAuthorized('Bearer ' + secret, secret), true);
+  assert.equal(automationRunAuthorized('Bearer wrong', secret), false);
+  assert.equal(automationRunAuthorized('Bearer short', 'short'), false);
+  await assert.rejects(async () => await runScheduledAutomation(db, 'Bearer ' + secret, secret, false), /دائم/);
+  await assert.rejects(async () => await runScheduledAutomation(db, 'Bearer wrong', secret, true), /مصرح/);
+  await runScheduledAutomation(db, 'Bearer ' + secret, secret, true);
+  db.close();
+});
