@@ -1,0 +1,15 @@
+import {mkdirSync,writeFileSync,existsSync} from 'node:fs';import {randomBytes} from 'node:crypto';import {resolve} from 'node:path';import {fileURLToPath} from 'node:url';
+const dir=process.env.CONFIG_DIR;if(!dir||!dir.startsWith('/'))throw Error('CONFIG_DIR must be an absolute private directory outside git');
+if(resolve(dir).startsWith(fileURLToPath(new URL('../',import.meta.url))))throw Error('Keep configuration outside the infrastructure repository');
+mkdirSync(dir,{recursive:true,mode:0o700});
+const files=['postgres','factory','clinic','employees','feed-site','medical-site','gateway'];const count=files.filter(name=>existsSync(dir+'/'+name+'.env')).length;if(count&&count!==files.length)throw Error('Partial private configuration: restore matching files; refusing to regenerate database passwords');
+const keys=Object.fromEntries(['postgres','factory','clinic','employees','jwtFactory','jwtEmployees','setupFactory','setupClinic','automation','admin','inquiries','email','factoryOutbox','employeesOutbox'].map(k=>[k,randomBytes(32).toString('hex')]));
+const write=(name,values)=>{const p=dir+'/'+name+'.env';if(!existsSync(p))writeFileSync(p,Object.entries(values).map(([k,v])=>k+'='+v).join('\n')+'\n',{mode:0o600,flag:'wx'})};
+write('postgres',{POSTGRES_PASSWORD:keys.postgres,FACTORY_DB_PASSWORD:keys.factory,CLINIC_DB_PASSWORD:keys.clinic,EMPLOYEES_DB_PASSWORD:keys.employees});
+write('factory',{NODE_ENV:'production',APP_MODE:'production',DEMO_MODE:'off',DATABASE_URL:`postgresql://factory:${keys.factory}@postgres:5432/factory`,JWT_SECRET:keys.jwtFactory,SETUP_TOKEN:keys.setupFactory,ERP_DATA_DIR:'/app/data',NOTIFICATION_OUTBOX_SECRET:keys.factoryOutbox});
+write('clinic',{NODE_ENV:'production',DATABASE_URL:`postgresql://clinic:${keys.clinic}@postgres:5432/clinic`,CLINIC_SETUP_TOKEN:keys.setupClinic,CLINIC_AUTOMATION_SECRET:keys.automation,CLINIC_BASE_URL:'',DEMO_MODE:'off',CLINIC_EMAIL_ENDPOINT:'',CLINIC_EMAIL_KEY:''});
+write('employees',{NODE_ENV:'production',WORKFORCE_DATABASE_URL:`postgresql://workforce:${keys.employees}@postgres:5432/workforce`,WORKFORCE_JWT_SECRET:keys.jwtEmployees,WORKFORCE_DEMO_MODE:'false',DEMO_MODE:'false',COMPANY_NAME:'',COMPANY_ADMIN_EMAIL:'',COMPANY_ADMIN_PASSWORD:keys.admin,SITE_URL:'',SMTP_HOST:'',SMTP_PORT:'587',SMTP_SECURE:'false',SMTP_USER:'',SMTP_PASS:'',SMTP_FROM:'',NOTIFICATION_OUTBOX_SECRET:keys.employeesOutbox});
+write('feed-site',{NODE_ENV:'production',HOST:'0.0.0.0',DEMO_MODE:'off',INQUIRY_DATA_FILE:'/data/inquiries.sqlite',INQUIRY_ADMIN_PASSWORD:keys.inquiries,PUBLIC_URL:''});
+write('medical-site',{DEMO_MODE:'off'});write('gateway',{FACTORY_DOMAIN:'',CLINIC_DOMAIN:'',EMPLOYEES_DOMAIN:'',FEED_DOMAIN:'',MEDICAL_DOMAIN:'',TLS_EMAIL:''});
+if(!existsSync(dir+'/backup.key'))writeFileSync(dir+'/backup.key',randomBytes(32).toString('base64url'),{mode:0o600,flag:'wx'});
+console.log('Private files created without printing credentials. Complete owner-approved hostnames, company identity, channels and policies before startup. Existing files were preserved.');

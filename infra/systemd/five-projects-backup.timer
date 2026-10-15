@@ -1,0 +1,7 @@
+[Unit]
+Description=Daily five-projects backup (activate after owner approves schedule)
+[Timer]
+OnCalendar=*-*-* 02:00:00 Asia/Muscat
+Persistent=true
+[Install]
+WantedBy=timers.target

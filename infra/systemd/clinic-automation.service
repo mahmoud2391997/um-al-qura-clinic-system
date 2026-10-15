@@ -1,0 +1,7 @@
+[Unit]
+Description=Clinic scheduled automation
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/five-projects/infra
+EnvironmentFile=/etc/five-projects/operator.env
+ExecStart=/opt/five-projects/infra/clinic-automation.sh

@@ -1,0 +1,23 @@
+{
+ email {$TLS_EMAIL}
+}
+{$FACTORY_DOMAIN} {
+ reverse_proxy factory:3000
+}
+{$CLINIC_DOMAIN} {
+ handle_path /internal-mail/* {
+  reverse_proxy mail-adapter:3000
+ }
+ handle {
+  reverse_proxy clinic:3000
+ }
+}
+{$EMPLOYEES_DOMAIN} {
+ reverse_proxy employees:3000
+}
+{$FEED_DOMAIN} {
+ reverse_proxy feed-site:3000
+}
+{$MEDICAL_DOMAIN} {
+ reverse_proxy medical-site:8080
+}

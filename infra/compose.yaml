@@ -1,0 +1,260 @@
+{
+  "name": "five-projects-vps",
+  "services": {
+    "gateway": {
+      "image": "caddy:2-alpine",
+      "restart": "unless-stopped",
+      "ports": [
+        "80:80",
+        "443:443",
+        "443:443/udp"
+      ],
+      "env_file": [
+        "${CONFIG_DIR:?set CONFIG_DIR}/gateway.env"
+      ],
+      "volumes": [
+        "./Caddyfile:/etc/caddy/Caddyfile:ro",
+        "caddy_data:/data",
+        "caddy_config:/config"
+      ],
+      "networks": [
+        "front"
+      ]
+    },
+    "postgres": {
+      "image": "postgres:16-alpine",
+      "restart": "unless-stopped",
+      "env_file": [
+        "${CONFIG_DIR:?set CONFIG_DIR}/postgres.env"
+      ],
+      "volumes": [
+        "postgres_data:/var/lib/postgresql/data",
+        "./postgres/init.sh:/docker-entrypoint-initdb.d/10-apps.sh:ro"
+      ],
+      "networks": [
+        "data"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "pg_isready -U postgres -d postgres"
+        ],
+        "interval": "5s",
+        "timeout": "5s",
+        "retries": 30
+      }
+    },
+    "factory": {
+      "image": "five-projects-factory:${RELEASE_TAG:-candidate}",
+      "build": {
+        "context": "${PROJECTS_DIR:?set absolute root of the five checkouts}/factory"
+      },
+      "restart": "unless-stopped",
+      "env_file": [
+        "${CONFIG_DIR:?set CONFIG_DIR}/factory.env"
+      ],
+      "networks": [
+        "front",
+        "data"
+      ],
+      "depends_on": {
+        "postgres": {
+          "condition": "service_healthy"
+        }
+      },
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+        ],
+        "interval": "15s",
+        "timeout": "8s",
+        "start_period": "90s",
+        "retries": 12
+      },
+      "command": [
+        "sh",
+        "-c",
+        "node scripts/check-env.mjs && pnpm db:deploy && exec pnpm start:web"
+      ],
+      "volumes": [
+        "factory_files:/app/data"
+      ]
+    },
+    "clinic": {
+      "image": "five-projects-clinic:${RELEASE_TAG:-candidate}",
+      "build": {
+        "context": "${PROJECTS_DIR:?set absolute root of the five checkouts}/clinic"
+      },
+      "restart": "unless-stopped",
+      "env_file": [
+        "${CONFIG_DIR:?set CONFIG_DIR}/clinic.env"
+      ],
+      "networks": [
+        "front",
+        "data"
+      ],
+      "depends_on": {
+        "postgres": {
+          "condition": "service_healthy"
+        }
+      },
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/setup').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+        ],
+        "interval": "15s",
+        "timeout": "8s",
+        "start_period": "90s",
+        "retries": 12
+      },
+      "command": [
+        "sh",
+        "-c",
+        "node scripts/check-env.mjs && exec node node_modules/next/dist/bin/next start --hostname 0.0.0.0"
+      ]
+    },
+    "employees": {
+      "image": "five-projects-employees:${RELEASE_TAG:-candidate}",
+      "build": {
+        "context": "${PROJECTS_DIR:?set absolute root of the five checkouts}/employees"
+      },
+      "restart": "unless-stopped",
+      "env_file": [
+        "${CONFIG_DIR:?set CONFIG_DIR}/employees.env"
+      ],
+      "networks": [
+        "front",
+        "data"
+      ],
+      "depends_on": {
+        "postgres": {
+          "condition": "service_healthy"
+        }
+      },
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/auth/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+        ],
+        "interval": "15s",
+        "timeout": "8s",
+        "start_period": "90s",
+        "retries": 12
+      },
+      "command": [
+        "sh",
+        "-c",
+        "node scripts/check-env.mjs && pnpm db:deploy && exec pnpm -C apps/workforce exec next start --hostname 0.0.0.0 --port 3000"
+      ]
+    },
+    "feed-site": {
+      "image": "five-projects-feed-site:${RELEASE_TAG:-candidate}",
+      "build": {
+        "context": "${PROJECTS_DIR:?set absolute root of the five checkouts}/feed-site",
+        "args": {
+          "VITE_BASE": "/",
+          "SITE_CONTACT_JSON": "${FEED_CONTACT_JSON:?set owner-approved contact configuration}"
+        }
+      },
+      "restart": "unless-stopped",
+      "env_file": [
+        "${CONFIG_DIR:?set CONFIG_DIR}/feed-site.env"
+      ],
+      "networks": [
+        "front"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+        ],
+        "interval": "15s",
+        "timeout": "8s",
+        "start_period": "90s",
+        "retries": 12
+      },
+      "volumes": [
+        "feed_data:/data"
+      ]
+    },
+    "medical-site": {
+      "image": "five-projects-medical-site:${RELEASE_TAG:-candidate}",
+      "build": {
+        "context": "${PROJECTS_DIR:?set absolute root of the five checkouts}/medical-site",
+        "args": {
+          "VITE_BASE": "/",
+          "SITE_CONTACT_JSON": "${MEDICAL_CONTACT_JSON:?set owner-approved contact configuration}"
+        }
+      },
+      "restart": "unless-stopped",
+      "env_file": [
+        "${CONFIG_DIR:?set CONFIG_DIR}/medical-site.env"
+      ],
+      "networks": [
+        "front"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "wget",
+          "-q",
+          "--spider",
+          "http://127.0.0.1:8080/"
+        ],
+        "interval": "15s",
+        "timeout": "8s",
+        "retries": 10
+      }
+    },
+    "mail-adapter": {
+      "profiles": [
+        "mail"
+      ],
+      "image": "five-projects-mail-adapter:${RELEASE_TAG:-candidate}",
+      "build": {
+        "context": "./mail-adapter"
+      },
+      "env_file": [
+        "${CONFIG_DIR:?set CONFIG_DIR}/mail-adapter.env"
+      ],
+      "restart": "unless-stopped",
+      "networks": [
+        "front"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+        ],
+        "interval": "30s",
+        "timeout": "5s",
+        "retries": 3
+      }
+    }
+  },
+  "networks": {
+    "front": {},
+    "data": {
+      "internal": true
+    }
+  },
+  "volumes": {
+    "postgres_data": {},
+    "factory_files": {},
+    "feed_data": {},
+    "caddy_data": {},
+    "caddy_config": {}
+  }
+}
