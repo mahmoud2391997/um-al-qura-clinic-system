@@ -10,11 +10,11 @@ mkdir .deployment-lock 2>/dev/null || { echo 'Deployment/backup already in progr
 trap 'rmdir .deployment-lock' EXIT HUP INT TERM
 # No automatic git changes: operator supplies reviewed checkouts on explicit branches.
 for app in factory clinic employees;do
- (cd "$PROJECTS_DIR/$app" && if [ -x scripts/predeploy.sh ];then ./scripts/predeploy.sh;else pnpm check && pnpm build;fi)
+ (cd "$PROJECTS_DIR/$app" && if [ -f scripts/predeploy.sh ];then sh scripts/predeploy.sh;else pnpm check && pnpm build;fi)
 done
-./control.sh config --quiet
-./backup.sh
-./control.sh build --pull
-rollback(){ echo 'Deployment failed: restoring previous application image tags. Database migrations are NOT automatically reversed.' >&2;RELEASE_TAG="$PREVIOUS_RELEASE_TAG" ./control.sh up -d --no-build; }
-if ! ./control.sh up -d --no-build --wait --wait-timeout 240;then rollback;exit 1;fi
-if ! ./check-uptime.sh;then rollback;exit 1;fi
+sh ./control.sh config --quiet
+sh ./backup.sh
+sh ./control.sh build --pull
+rollback(){ echo 'Deployment failed: restoring previous application image tags. Database migrations are NOT automatically reversed.' >&2;RELEASE_TAG="$PREVIOUS_RELEASE_TAG" sh ./control.sh up -d --no-build; }
+if ! sh ./control.sh up -d --no-build --wait --wait-timeout 240;then rollback;exit 1;fi
+if ! sh ./check-uptime.sh;then rollback;exit 1;fi

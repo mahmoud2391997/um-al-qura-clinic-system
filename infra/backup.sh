@@ -8,17 +8,17 @@ umask 077
 mkdir -p backups
 snapshot=$(mktemp -d)
 started=$(date +%s)
-running=$(./control.sh ps --status running --services | sed -n '/^factory$/p;/^clinic$/p;/^employees$/p;/^feed-site$/p')
-cleanup(){ if [ -n "$running" ];then ./control.sh start $running >/dev/null || true;fi;rm -rf "$snapshot"; rmdir .backup-lock; }
+running=$(sh ./control.sh ps --status running --services | sed -n '/^factory$/p;/^clinic$/p;/^employees$/p;/^feed-site$/p')
+cleanup(){ if [ -n "$running" ];then sh ./control.sh start $running >/dev/null || true;fi;rm -rf "$snapshot"; rmdir .backup-lock; }
 trap cleanup EXIT HUP INT TERM
-[ -z "$running" ] || ./control.sh stop $running
+[ -z "$running" ] || sh ./control.sh stop $running
 for db in factory clinic workforce;do
- ./control.sh exec -T postgres pg_dump -U postgres -d "$db" -Fc > "$snapshot/$db.dump"
- ./control.sh exec -T postgres psql -U postgres -d "$db" -At -c "SELECT format('SELECT %L, count(*) FROM %I.%I;',tablename,schemaname,tablename) FROM pg_tables WHERE schemaname='public' ORDER BY tablename" > "$snapshot/$db-count.sql"
- ./control.sh exec -T postgres psql -U postgres -d "$db" -At < "$snapshot/$db-count.sql" > "$snapshot/$db-count.txt"
+ sh ./control.sh exec -T postgres pg_dump -U postgres -d "$db" -Fc > "$snapshot/$db.dump"
+ sh ./control.sh exec -T postgres psql -U postgres -d "$db" -At -c "SELECT format('SELECT %L, count(*) FROM %I.%I;',tablename,schemaname,tablename) FROM pg_tables WHERE schemaname='public' ORDER BY tablename" > "$snapshot/$db-count.sql"
+ sh ./control.sh exec -T postgres psql -U postgres -d "$db" -At < "$snapshot/$db-count.sql" > "$snapshot/$db-count.txt"
 done
-./control.sh cp factory:/app/data "$snapshot/factory-files"
-./control.sh cp feed-site:/data "$snapshot/feed-data"
+sh ./control.sh cp factory:/app/data "$snapshot/factory-files"
+sh ./control.sh cp feed-site:/data "$snapshot/feed-data"
 # All writers are stopped, including scheduler (systemd job checks deployment lock).
 (cd "$snapshot" && find factory-files feed-data -type f -exec shasum -a 256 '{}' \; > files.sha256)
 printf '%s\n' "$started" > "$snapshot/snapshot-epoch"

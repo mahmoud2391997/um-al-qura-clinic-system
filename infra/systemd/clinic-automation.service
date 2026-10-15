@@ -4,4 +4,4 @@ Description=Clinic scheduled automation
 Type=oneshot
 WorkingDirectory=/opt/five-projects/infra
 EnvironmentFile=/etc/five-projects/operator.env
-ExecStart=/opt/five-projects/infra/clinic-automation.sh
+ExecStart=/bin/sh /opt/five-projects/infra/clinic-automation.sh
