@@ -23,13 +23,23 @@ test('demo sessions only created for demo roles in demo database', async () => {
 test('production demo disabled unless explicitly enabled', () => {
   const before = process.env.NODE_ENV;
   const flag = process.env.CLINIC_DEMO;
+  const override = process.env.DEMO_MODE;
+  try {
   process.env.NODE_ENV = 'production';
   delete process.env.CLINIC_DEMO;
+  delete process.env.DEMO_MODE;
   assert.equal(demoEnabled(), false);
   process.env.CLINIC_DEMO = '1';
   assert.equal(demoEnabled(), true);
+  process.env.DEMO_MODE = 'off';
+  assert.equal(demoEnabled(), false);
+  process.env.DEMO_MODE = 'on';
+  assert.equal(demoEnabled(), true);
+  } finally {
   if (before === undefined) delete process.env.NODE_ENV;else process.env.NODE_ENV = before;
   if (flag === undefined) delete process.env.CLINIC_DEMO;else process.env.CLINIC_DEMO = flag;
+  if (override === undefined) delete process.env.DEMO_MODE;else process.env.DEMO_MODE = override;
+  }
 });
 test('every agreed role has a separate demo identity and session', async () => {
   const {
