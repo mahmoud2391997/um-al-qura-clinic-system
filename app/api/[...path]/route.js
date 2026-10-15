@@ -1,3 +1,6 @@
+import {saveServicePrice,listServicePrices,priceForRecord,snapshotPrice,requestBelowCost,decideBelowCost,setAdjustmentPolicy,requestAdjustment,decideAdjustment,issueMaintenancePart,linkLeadVisit,funnelMetrics,filteredReport} from '../../../lib/readiness-workflows.js';
+import { checkProductionEnvironment } from '../../../scripts/check-env.mjs';
+import { patientProfile, linkPatientTask } from '../../../lib/patient-profile.js';
 import {bootstrapAuthorized} from '../../../lib/bootstrap.js';
 import {postgresConfigured,withPostgres} from '../../../lib/postgres.js';
 import { asyncMap, asyncFilter } from "../../../lib/async-collections.js";
@@ -73,6 +76,7 @@ async function handle(req, {
       if (!result) return response({
         error: 'دور العرض غير متاح'
       }, 400);
+      jar.delete('clinic_session');
       jar.set('clinic_demo', result.token, {
         httpOnly: true,
         sameSite: 'strict',
@@ -90,14 +94,15 @@ async function handle(req, {
     if (process.env.CLINIC_DEMO_ONLY === '1' && !isDemo) return response({
       error: 'افتح الديمو لبدء جلسة العرض'
     }, 401);
+    if (demoToken && !isDemo && !['login','setup'].includes(path)) { jar.delete('clinic_demo'); return response({error:'انتهى العرض التجريبي أو تم إيقافه؛ سجّل الدخول من جديد'},401); }
     const db = isDemo ? demoDatabase : mainDb;
     const audit = async (...args) => await recordAudit(...args, db);
     const sessionToken = isDemo ? demoToken : jar.get('clinic_session')?.value;
     if (path === 'setup' && method === 'GET') return response({
-      needed: !(await db.prepare('SELECT id FROM users LIMIT 1').get()),tokenRequired:mainDb.dialect==='postgres'&&process.env.VERCEL==='1'
+      needed: !(await db.prepare('SELECT id FROM users LIMIT 1').get()),tokenRequired:!isDemo&&(process.env.NODE_ENV==='production'||mainDb.dialect==='postgres'&&process.env.VERCEL==='1')
     });
     if (path === 'setup' && method === 'POST') {
-      if(mainDb.dialect==='postgres'&&process.env.VERCEL==='1'&&!bootstrapAuthorized(body.setupToken,process.env.CLINIC_SETUP_TOKEN))return response({error:'رمز إعداد المالك مطلوب؛ اطلبه من مسؤول النشر'},403);
+      if(!isDemo&&(process.env.NODE_ENV==='production'||mainDb.dialect==='postgres'&&process.env.VERCEL==='1')&&!bootstrapAuthorized(body.setupToken,process.env.CLINIC_SETUP_TOKEN))return response({error:'رمز إعداد المالك مطلوب؛ اطلبه من مسؤول النشر'},403);
       if (await db.prepare('SELECT id FROM users LIMIT 1').get()) return response({
         error: 'تم إعداد النظام بالفعل'
       }, 409);
@@ -190,38 +195,67 @@ async function handle(req, {
       error: 'سجّل الدخول أولًا'
     }, 401);
     const permissions = JSON.parse(user.permissions);
+    const auditedResponse=async (body,status=200)=>{if(method==='GET'&&status<400&&!['me'].includes(path))await audit(user.id,'data.read.success',path,null,{role:user.role,scopes:await roleScopes(db,user.role),count:Array.isArray(body)?body.length:1});return response(body,status)};
+    const readinessActor={...user,permissions};
+    const readinessRoutes=['finance/service-prices','finance/below-cost','inventory/adjustment-policy','inventory/adjustment-requests','equipment/parts-issue','marketing/visits','reports/filtered'];
+    if(readinessRoutes.includes(path)){
+      try{
+        if(method==='GET'){
+          if(path==='finance/service-prices')return auditedResponse(await listServicePrices(db,readinessActor));
+          if(path==='reports/filtered')return auditedResponse(await filteredReport(db,Object.fromEntries(new URL(req.url).searchParams),readinessActor));
+          if(path==='marketing/visits')return auditedResponse(await funnelMetrics(db,readinessActor));
+          const permission=path.startsWith('finance/')?'finance.view':path.startsWith('inventory/')?'inventory.view':'equipment.view';
+          if(!permissions.includes(permission))return auditedResponse({error:'غير مصرح'},403);
+          if(path==='finance/below-cost')return auditedResponse(await asyncFilter(await db.prepare('SELECT id,patient_id,price_id,amount,reason,creator,status,reviewer,decision,invoice_id FROM below_cost_requests ORDER BY id').all(),row=>patientVisible(db,row.patient_id,readinessActor)));
+          if(path==='inventory/adjustment-policy')return auditedResponse(await db.prepare('SELECT * FROM stock_adjustment_policy').all());
+          if(path==='inventory/adjustment-requests')return auditedResponse(await db.prepare('SELECT * FROM stock_adjustment_requests ORDER BY id').all());
+          return auditedResponse(await db.prepare('SELECT p.*,a.batch_id,a.quantity FROM maintenance_parts p JOIN stock_allocations a ON a.movement_id=p.movement_id ORDER BY p.id').all());
+        }
+        const result=path==='finance/service-prices'?await saveServicePrice(db,body,readinessActor):path==='finance/below-cost'?(body.action?await decideBelowCost(db,body,readinessActor):await requestBelowCost(db,body,readinessActor)):path==='inventory/adjustment-policy'?await setAdjustmentPolicy(db,body,readinessActor):path==='inventory/adjustment-requests'?(body.action?await decideAdjustment(db,body,readinessActor):await requestAdjustment(db,body,readinessActor)):path==='equipment/parts-issue'?await issueMaintenancePart(db,body,readinessActor):path==='marketing/visits'?await linkLeadVisit(db,body,readinessActor):null;
+        if(result===null)return auditedResponse({error:'للقراءة فقط'},405);return auditedResponse(result);
+      }catch(e){return auditedResponse({error:e.message},400)}
+    }
+    if(path==='patients/task-link'&&method==='POST'){try{return auditedResponse(await linkPatientTask(db,Number(body.patient_id),Number(body.task_id),{...user,permissions}))}catch{return auditedResponse({error:'ربط المهمة غير متاح'},403)}}
+    if (path.startsWith('patients/profile/') && method === 'GET') {
+      try { return auditedResponse(await patientProfile(db, Number(path.split('/')[2]), {...user,permissions})); }
+      catch { return auditedResponse({error:'ملف المريض غير متاح'},403); }
+    }
+    const privateResponse = async rows => {
+      await audit(user.id, 'data.read', path, null, {count: Array.isArray(rows) ? rows.length : 1});
+      return auditedResponse(rows);
+    };
     if (req.method === 'GET') await tickAutomation(db);
     if (path === 'finance/staff') {
-      if (method !== 'GET' || !allowed(user, permissions, 'finance', 'view')) return response({
+      if (method !== 'GET' || !allowed(user, permissions, 'finance', 'view')) return auditedResponse({
         error: 'صلاحية المالية مطلوبة'
       }, 403);
-      return response(await db.prepare("SELECT id,name FROM users WHERE active=1 AND role IN ('doctor','physio','physio_lead')").all());
+      return auditedResponse(await db.prepare("SELECT id,name FROM users WHERE active=1 AND role IN ('doctor','physio','physio_lead')").all());
     }
     if (['tasks/alerts', 'tasks/recurring', 'tasks/policy', 'tasks/escalations', 'tasks/staff'].includes(path)) {
-      if (!allowed(user, permissions, 'tasks', 'view')) return response({
+      if (!allowed(user, permissions, 'tasks', 'view')) return auditedResponse({
         error: 'صلاحية المهام مطلوبة'
       }, 403);
       if (method === 'POST') {
-        if (!['tasks/recurring', 'tasks/policy'].includes(path)) return response({
+        if (!['tasks/recurring', 'tasks/policy'].includes(path)) return auditedResponse({
           error: 'للقراءة فقط'
         }, 403);
         try {
-          return response(await saveAutomation(db, path, body, user));
+          return auditedResponse(await saveAutomation(db, path, body, user));
         } catch (e) {
-          return response({
+          return auditedResponse({
             error: e.message
           }, 400);
         }
       }
-      if (path === 'tasks/alerts') return response((await db.prepare('SELECT * FROM alerts ORDER BY id DESC').all()).filter(a => permissions.includes(a.module + '.view') && (user.role === 'owner' || a.owner === user.id)));
-      if (path === 'tasks/staff') return response(await db.prepare('SELECT id,name FROM users WHERE active=1').all());
-      if (path === 'tasks/escalations') return response(await db.prepare('SELECT e.*,t.title FROM task_escalations e JOIN tasks t ON t.id=e.task_id WHERE e.owner=? OR t.owner=?').all(user.id, user.id));
-      if (user.role !== 'owner') return response({
+      if (path === 'tasks/alerts') return auditedResponse((await db.prepare('SELECT * FROM alerts ORDER BY id DESC').all()).filter(a => permissions.includes(a.module + '.view') && (user.role === 'owner' || a.owner === user.id)));
+      if (path === 'tasks/staff') return auditedResponse(await db.prepare('SELECT id,name FROM users WHERE active=1').all());
+      if (path === 'tasks/escalations') return auditedResponse(await db.prepare('SELECT e.*,t.title FROM task_escalations e JOIN tasks t ON t.id=e.task_id WHERE e.owner=? OR t.owner=?').all(user.id, user.id));
+      if (user.role !== 'owner') return auditedResponse({
         error: 'الإعدادات للمالك'
       }, 403);
-      return response(await db.prepare('SELECT * FROM ' + (path === 'tasks/policy' ? 'automation_policy' : 'recurring_tasks') + ' ORDER BY id DESC').all());
+      return auditedResponse(await db.prepare('SELECT * FROM ' + (path === 'tasks/policy' ? 'automation_policy' : 'recurring_tasks') + ' ORDER BY id DESC').all());
     }
-    if (path === 'me') return response({
+    if (path === 'me') return auditedResponse({
       user: {
         id: user.id,
         name: user.name,
@@ -234,7 +268,7 @@ async function handle(req, {
     if (path === 'logout' && method === 'POST') {
       await db.prepare('DELETE FROM sessions WHERE token=?').run(sessionToken);
       if (isDemo) jar.delete('clinic_demo');else jar.delete('clinic_session');
-      return response({
+      return auditedResponse({
         ok: true
       });
     }
@@ -245,27 +279,27 @@ async function handle(req, {
           ...user,
           permissions
         };
-        if (method === 'GET') return response(path.endsWith('/targets') ? await documentTargets(db, documentPath, actor) : await listDocuments(db, documentPath, actor));
-        if (path.endsWith('/targets')) return response({
+        if (method === 'GET') return privateResponse(path.endsWith('/targets') ? await documentTargets(db, documentPath, actor) : await listDocuments(db, documentPath, actor));
+        if (path.endsWith('/targets')) return auditedResponse({
           error: 'للقراءة فقط'
         }, 403);
-        return response(await saveDocument(db, documentPath, body, actor));
+        return auditedResponse(await saveDocument(db, documentPath, body, actor));
       } catch (e) {
-        return response({
+        return auditedResponse({
           error: e.message
         }, 400);
       }
     }
     if (path === 'reports/export' && method === 'POST') {
       try {
-        return response({
+        return auditedResponse({
           csv: toCsv(await exportRows(db, String(body.path), {
             ...user,
             permissions
           }))
         });
       } catch (e) {
-        return response({
+        return auditedResponse({
           error: e.message
         }, 403);
       }
@@ -276,22 +310,22 @@ async function handle(req, {
         permissions
       };
       try {
-        if (method === 'GET') return response(await listExtras(db, path, actor));
-        if (path === 'purchasing/invoice-orders') return response({
+        if (method === 'GET') return auditedResponse(await listExtras(db, path, actor));
+        if (path === 'purchasing/invoice-orders') return auditedResponse({
           error: 'للقراءة فقط'
         }, 403);
         const result = await saveExtras(db, path, body, actor);
-        return response(result.file ? result : {
+        return auditedResponse(result.file ? result : {
           ok: true
         });
       } catch (e) {
-        return response({
+        return auditedResponse({
           error: e.message
         }, 400);
       }
     }
     if (path.startsWith('purchasing/')) {
-      if (!['purchasing/requests', 'purchasing/orders', 'purchasing/receipts', 'purchasing/catalog'].includes(path)) return response({
+      if (!['purchasing/requests', 'purchasing/orders', 'purchasing/receipts', 'purchasing/catalog'].includes(path)) return auditedResponse({
         error: 'المسار غير موجود'
       }, 404);
       const actor = {
@@ -299,95 +333,95 @@ async function handle(req, {
         permissions
       };
       try {
-        if (method === 'GET') return response(await listPurchasing(db, path, actor));
-        if (['purchasing/catalog', 'purchasing/receipts'].includes(path)) return response({
+        if (method === 'GET') return auditedResponse(await listPurchasing(db, path, actor));
+        if (['purchasing/catalog', 'purchasing/receipts'].includes(path)) return auditedResponse({
           error: 'السجل للقراءة فقط'
         }, 403);
         await savePurchasing(db, path, body, actor);
-        return response({
+        return auditedResponse({
           ok: true
         });
       } catch (e) {
-        return response({
+        return auditedResponse({
           error: e.message
         }, 400);
       }
     }
     const mod = path.split('/')[0];
     const action = method === 'GET' ? 'view' : ['approve', 'refund', 'discount'].includes(body.action) || ['finance/approvals', 'finance/package-returns', 'finance/corrections'].includes(path) && body.action === 'reject' ? 'approve' : body.id ? 'edit' : 'create';
-    if (!allowed(user, permissions, mod, action)) return response({
+    if (!allowed(user, permissions, mod, action)) return auditedResponse({
       error: 'ليس لديك صلاحية لهذا الإجراء'
     }, 403);
-    if (path === 'finance/policy' && user.role !== 'owner') return response({
+    if (path === 'finance/policy' && user.role !== 'owner') return auditedResponse({
       error: 'ضبط الحدود المالية مخصص لمالك المجمع'
     }, 403);
     if (mod === 'finance' && method === 'POST') {
       try {
         await enforceFinanceLimit(db, body, user.role === 'owner');
       } catch (e) {
-        return response({
+        return auditedResponse({
           error: e.message
         }, 403);
       }
     }
-    if (path === 'reports/integrations' && user.role !== 'owner') return response({
+    if (path === 'reports/integrations' && user.role !== 'owner') return auditedResponse({
       error: 'سجل التكاملات مخصص للمالك'
     }, 403);
-    if (path === 'finance/cashbox' && method === 'POST' && !allowed(user, permissions, 'finance', 'approve')) return response({
+    if (path === 'finance/cashbox' && method === 'POST' && !allowed(user, permissions, 'finance', 'approve')) return auditedResponse({
       error: 'إقفال الصندوق يحتاج صلاحية اعتماد المالية'
     }, 403);
     if (path === 'finance/corrections') {
       try {
-        if (method === 'POST') return response(await correctFinancialRecord(db, body, {
+        if (method === 'POST') return auditedResponse(await correctFinancialRecord(db, body, {
           ...user,
           permissions
         }));
-        return response(await db.prepare('SELECT id,kind,source_id,reason,creator,status,reviewer,decision,compensation_id,time FROM financial_corrections WHERE ? OR creator=? ORDER BY id DESC').all(Number(user.role === 'owner' || permissions.includes('finance.approve')), user.id));
+        return auditedResponse(await db.prepare('SELECT id,kind,source_id,reason,creator,status,reviewer,decision,compensation_id,time FROM financial_corrections WHERE ? OR creator=? ORDER BY id DESC').all(Number(user.role === 'owner' || permissions.includes('finance.approve')), user.id));
       } catch (e) {
-        return response({
+        return auditedResponse({
           error: e.message
         }, 400);
       }
     }
     if (path === 'finance/package-returns') {
       try {
-        if (method === 'POST') return response(await returnPackageSession(db, body, {
+        if (method === 'POST') return auditedResponse(await returnPackageSession(db, body, {
           ...user,
           permissions
         }));
-        return response(await db.prepare('SELECT * FROM package_returns WHERE ? OR creator=? ORDER BY id DESC').all(Number(user.role === 'owner' || permissions.includes('finance.approve')), user.id));
+        return auditedResponse(await db.prepare('SELECT * FROM package_returns WHERE ? OR creator=? ORDER BY id DESC').all(Number(user.role === 'owner' || permissions.includes('finance.approve')), user.id));
       } catch (e) {
-        return response({
+        return auditedResponse({
           error: e.message
         }, 400);
       }
     }
     if (path === 'finance/approvals') {
       try {
-        if (method === 'POST') return response(await financeRequest(db, body, {
+        if (method === 'POST') return auditedResponse(await financeRequest(db, body, {
           ...user,
           permissions
         }));
-        return response(await db.prepare('SELECT * FROM finance_requests WHERE ? OR creator=? ORDER BY id DESC').all(Number(user.role === 'owner' || permissions.includes('finance.approve')), user.id));
+        return auditedResponse(await db.prepare('SELECT * FROM finance_requests WHERE ? OR creator=? ORDER BY id DESC').all(Number(user.role === 'owner' || permissions.includes('finance.approve')), user.id));
       } catch (e) {
-        return response({
+        return auditedResponse({
           error: e.message
         }, 400);
       }
     }
     if (path === 'finance/cash-corrections' && method === 'POST') {
       try {
-        return response(await correctCashClosure(db, body, {
+        return auditedResponse(await correctCashClosure(db, body, {
           ...user,
           permissions
         }));
       } catch (e) {
-        return response({
+        return auditedResponse({
           error: e.message
         }, 400);
       }
     }
-    if (path === 'clinical/templates' && method === 'POST' && user.role !== 'owner' && !['doctor', 'physio', 'physio_lead'].includes(user.role)) return response({
+    if (path === 'clinical/templates' && method === 'POST' && user.role !== 'owner' && !['doctor', 'physio', 'physio_lead'].includes(user.role)) return auditedResponse({
       error: 'إعداد القالب للمالك أو الممارس المؤهل'
     }, 403);
     if (path === 'clinical/home-followup' && method === 'POST') {
@@ -397,60 +431,60 @@ async function handle(req, {
           permissions
         });
         await audit(user.id, 'clinical.home-followup', String(body.program_id), null, body);
-        return response({
+        return auditedResponse({
           ok: true
         });
       } catch (e) {
-        return response({
+        return auditedResponse({
           error: e.message
         }, 400);
       }
     }
     if (path === 'appointments/waiting' && method === 'POST') {
       const waiting = body.id ? await db.prepare('SELECT * FROM waiting_list WHERE id=?').get(body.id) : null;
-      if (body.id && !waiting) return response({
+      if (body.id && !waiting) return auditedResponse({
         error: 'سجل الانتظار غير موجود'
       }, 404);
-      if ((await assignedScope(db, user, 'appointments')) && (waiting?.provider || body.provider) !== user.id) return response({
+      if ((await assignedScope(db, user, 'appointments')) && (waiting?.provider || body.provider) !== user.id) return auditedResponse({
         error: 'سجل الانتظار خارج نطاق حسابك'
       }, 403);
-      if (!(await patientVisible(db, waiting?.patient_id || body.patient_id, user, 'patients'))) return response({
+      if (!(await patientVisible(db, waiting?.patient_id || body.patient_id, user, 'patients'))) return auditedResponse({
         error: 'المريض خارج نطاق حسابك'
       }, 403);
     }
     if (operationPages[path]) {
       if (method === 'GET') {
         const rows = await listOperations(db, path, permissions, user);
-        return response(['clinical/progress', 'clinical/home-followup'].includes(path) ? await scopeRows(db, 'clinical', rows, user) : path === 'appointments/waiting' ? await scopeRows(db, 'appointments', rows, user) : rows);
+        return privateResponse(['clinical/progress', 'clinical/home-followup'].includes(path) ? await scopeRows(db, 'clinical', rows, user) : path === 'appointments/waiting' ? await scopeRows(db, 'appointments', rows, user) : rows);
       }
-      if (path === 'inventory/movements' && body.kind === 'Adjustment' && !allowed(user, permissions, 'inventory', 'approve')) return response({
+      if (path === 'inventory/movements' && body.kind === 'Adjustment') return auditedResponse({
         error: 'تسوية المخزون تحتاج صلاحية اعتماد'
       }, 403);
       try {
         const result = await saveOperation(db, path, body, user.id);
         await audit(user.id, path + '.' + (body.action || 'save'), String(result.after.id || body.id || 'new'), result.before, result.after);
-        return response({
+        return auditedResponse({
           ok: true
         });
       } catch (e) {
-        return response({
+        return auditedResponse({
           error: e.message
         }, 400);
       }
     }
     if (mod === 'roles') {
-      if (method === 'GET') return response(await asyncMap(await db.prepare('SELECT * FROM roles').all(), async r => ({
+      if (method === 'GET') return auditedResponse(await asyncMap(await db.prepare('SELECT * FROM roles').all(), async r => ({
         ...r,
         permissions: JSON.parse(r.permissions),
         scopes: await roleScopes(db, r.id)
       })));
-      if (user.role !== 'owner') return response({
+      if (user.role !== 'owner') return auditedResponse({
         error: 'إدارة الصلاحيات لمالك المجمع'
       }, 403);
-      if (!body.name || !validPermissions(body.permissions)) return response({
+      if (!body.name || !validPermissions(body.permissions)) return auditedResponse({
         error: 'الصلاحيات غير صحيحة'
       }, 400);
-      if (body.id === 'owner' && !['roles.view', 'roles.edit', 'users.view', 'users.edit'].every(p => body.permissions.includes(p))) return response({
+      if (body.id === 'owner' && !['roles.view', 'roles.edit', 'users.view', 'users.edit'].every(p => body.permissions.includes(p))) return auditedResponse({
         error: 'احتفظ بصلاحيات إدارة المستخدمين والأدوار لمنع فقدان التحكم'
       }, 400);
       const id = body.id || randomUUID();
@@ -460,43 +494,43 @@ async function handle(req, {
         if (body.scopes) await saveRoleScopes(db, id, body.scopes);
         await audit(user.id, 'roles.save', id, before, body);
       });
-      return response({
+      return auditedResponse({
         ok: true
       });
     }
     if (path === 'users/revoke' && method === 'POST') {
-      if (user.role !== 'owner') return response({
+      if (user.role !== 'owner') return auditedResponse({
         error: 'إبطال الجلسات للمالك'
       }, 403);
       const count = await revokeSessions(db, String(body.id));
       await audit(user.id, 'users.sessions.revoke', String(body.id), null, {
         count
       });
-      return response({
+      return auditedResponse({
         ok: true
       });
     }
     if (mod === 'users') {
-      if (method === 'GET') return response(await db.prepare('SELECT id,name,email,role,active FROM users').all());
-      if (user.role !== 'owner') return response({
+      if (method === 'GET') return auditedResponse(await db.prepare('SELECT id,name,email,role,active FROM users').all());
+      if (user.role !== 'owner') return auditedResponse({
         error: 'إدارة حسابات الموظفين وإسناد الأدوار لمالك المجمع'
       }, 403);
-      if (!body.name || !body.email || !body.role || !body.id && String(body.password || '').length < 12) return response({
+      if (!body.name || !body.email || !body.role || !body.id && String(body.password || '').length < 12) return auditedResponse({
         error: 'راجع البيانات وكلمة المرور'
       }, 400);
-      if (body.role === 'owner' && user.role !== 'owner') return response({
+      if (body.role === 'owner' && user.role !== 'owner') return auditedResponse({
         error: 'إسناد المالك يتطلب صلاحية المالك'
       }, 403);
       const id = body.id || randomUUID();
       const before = await db.prepare('SELECT id,name,email,role,active FROM users WHERE id=?').get(id);
-      if (before?.role === 'owner' && user.role !== 'owner') return response({
+      if (before?.role === 'owner' && user.role !== 'owner') return auditedResponse({
         error: 'حساب المالك محمي'
       }, 403);
-      if (before && body.password && String(body.password).length < 12) return response({
+      if (before && body.password && String(body.password).length < 12) return auditedResponse({
         error: 'كلمة المرور الجديدة 12 حرفًا على الأقل'
       }, 400);
       if (before) {
-        if (before.role === 'owner' && (body.role !== 'owner' || body.active === false)) return response({
+        if (before.role === 'owner' && (body.role !== 'owner' || body.active === false)) return auditedResponse({
           error: 'حساب المالك لا يمكن تعطيله من هذه الشاشة'
         }, 400);
         await db.prepare('UPDATE users SET name=?,email=?,role=?,active=? WHERE id=?').run(body.name, body.email.toLowerCase(), body.role, body.active === false ? 0 : 1, id);
@@ -508,62 +542,62 @@ async function handle(req, {
         email: body.email,
         role: body.role
       });
-      return response({
+      return auditedResponse({
         ok: true
       });
     }
-    if (mod === 'audit' && method === 'GET') return response(await db.prepare('SELECT a.*,u.name actor_name FROM audit a LEFT JOIN users u ON a.actor=u.id ORDER BY a.id DESC LIMIT 100').all());
+    if (mod === 'audit' && method === 'GET') return auditedResponse(await db.prepare('SELECT a.*,u.name actor_name FROM audit a LEFT JOIN users u ON a.actor=u.id ORDER BY a.id DESC LIMIT 100').all());
     if (mod === 'patients') {
-      if (method === 'GET') return response(await scopeRows(db, 'patients', await db.prepare('SELECT * FROM patients WHERE active=1 ORDER BY id DESC').all(), user));
-      if (!body.name?.trim() || !body.phone?.trim()) return response({
+      if (method === 'GET') return privateResponse(await scopeRows(db, 'patients', await db.prepare('SELECT * FROM patients WHERE active=1 ORDER BY id DESC').all(), user));
+      if (!body.name?.trim() || !body.phone?.trim()) return auditedResponse({
         error: 'الاسم والهاتف مطلوبان'
       }, 400);
-      if (body.id && !(await patientVisible(db, body.id, user))) return response({
+      if (body.id && !(await patientVisible(db, body.id, user))) return auditedResponse({
         error: 'ملف المريض غير متاح'
       }, 403);
       const dup = await db.prepare('SELECT id,name FROM patients WHERE phone=? AND active=1').all(body.phone.trim());
-      if (dup.length && !body.confirmDuplicate && !body.id) return response({
+      if (dup.length && !body.confirmDuplicate && !body.id) return auditedResponse({
         error: 'يوجد ملف بنفس الهاتف، راجع التكرار أو أكد تسجيل فرد آخر',
         duplicates: await asyncFilter(dup, async r => await patientVisible(db, r.id, user))
       }, 409);
       if (body.id) await db.prepare('UPDATE patients SET name=?,phone=?,source=?,birth=?,gender=? WHERE id=?').run(body.name, body.phone, body.source || '', body.birth || '', body.gender || '', body.id);else await db.prepare('INSERT INTO patients(name,phone,source,birth,gender,creator) VALUES(?,?,?,?,?,?)').run(body.name.trim(), body.phone.trim(), body.source || '', body.birth || '', body.gender || '', user.id);
       await audit(user.id, 'patients.save', String(body.id || 'new'), null, body);
-      return response({
+      return auditedResponse({
         ok: true
       });
     }
     if (mod === 'appointments') {
-      if (method === 'GET') return response(await scopeRows(db, 'appointments', await db.prepare('SELECT a.*,p.name patient FROM appointments a JOIN patients p ON p.id=a.patient_id ORDER BY start').all(), user));
-      if (body.id && (await assignedScope(db, user, 'appointments')) && !(await db.prepare('SELECT id FROM appointments WHERE id=? AND provider=?').get(body.id, user.id))) return response({
+      if (method === 'GET') return privateResponse(await scopeRows(db, 'appointments', await db.prepare('SELECT a.*,p.name patient FROM appointments a JOIN patients p ON p.id=a.patient_id ORDER BY start').all(), user));
+      if (body.id && (await assignedScope(db, user, 'appointments')) && !(await db.prepare('SELECT id FROM appointments WHERE id=? AND provider=?').get(body.id, user.id))) return auditedResponse({
         error: 'الموعد غير متاح'
       }, 403);
-      if (!body.id && (await assignedScope(db, user, 'appointments')) && body.provider !== user.id) return response({
+      if (!body.id && (await assignedScope(db, user, 'appointments')) && body.provider !== user.id) return auditedResponse({
         error: 'الموعد خارج نطاق حسابك'
       }, 403);
-      if (body.patient_id && !(await patientVisible(db, body.patient_id, user, 'patients'))) return response({
+      if (body.patient_id && !(await patientVisible(db, body.patient_id, user, 'patients'))) return auditedResponse({
         error: 'المريض خارج نطاق حسابك'
       }, 403);
       if (body.id && body.action === 'reschedule') {
         try {
           await rescheduleAppointment(db, body, user.id);
-          return response({
+          return auditedResponse({
             ok: true
           });
         } catch (e) {
-          return response({
+          return auditedResponse({
             error: e.message
           }, 400);
         }
       }
       if (body.id) {
         const before = await db.prepare('SELECT * FROM appointments WHERE id=?').get(body.id);
-        if (!before) return response({
+        if (!before) return auditedResponse({
           error: 'الموعد غير موجود'
         }, 404);
-        if (!['Pending', 'Confirmed', 'Arrived', 'Waiting', 'In Service', 'Completed', 'Cancelled', 'No show'].includes(body.status)) return response({
+        if (!['Pending', 'Confirmed', 'Arrived', 'Waiting', 'In Service', 'Completed', 'Cancelled', 'No show'].includes(body.status)) return auditedResponse({
           error: 'حالة غير صحيحة'
         }, 400);
-        if (['Cancelled', 'No show'].includes(body.status) && !body.reason) return response({
+        if (['Cancelled', 'No show'].includes(body.status) && !body.reason) return auditedResponse({
           error: 'سبب الإلغاء أو عدم الحضور مطلوب'
         }, 400);
         await transaction(db, async () => {
@@ -572,38 +606,40 @@ async function handle(req, {
           await db.prepare(`UPDATE appointments SET status=?,reason=?,arrived=CASE WHEN ?='Arrived' THEN CURRENT_TIMESTAMP ELSE arrived END,started=CASE WHEN ?='In Service' THEN CURRENT_TIMESTAMP ELSE started END,completed=CASE WHEN ?='Completed' THEN CURRENT_TIMESTAMP ELSE completed END WHERE id=?`).run(body.status, body.reason || '', body.status, body.status, body.status, body.id);
         });
         await audit(user.id, 'appointments.status', String(body.id), before, body);
-        return response({
+        return auditedResponse({
           ok: true
         });
       }
-      if (!body.patient_id || !body.provider || !body.start || !body.end || Date.parse(body.end) <= Date.parse(body.start)) return response({
+      if (!body.patient_id || !body.provider || !body.start || !body.end || Date.parse(body.end) <= Date.parse(body.start)) return auditedResponse({
         error: 'راجع المريض والممارس ووقت البداية والنهاية'
       }, 400);
       const conflict = await db.prepare(`SELECT id FROM appointments WHERE status NOT IN ('Cancelled','No show') AND start<? AND end>? AND (provider=? OR (room<>'' AND room=?))`).get(body.end, body.start, body.provider, body.room || '');
-      if (conflict) return response({
+      if (conflict) return auditedResponse({
         error: 'تعارض في الممارس أو الغرفة'
       }, 409);
       await transaction(db, async () => {
+        const price=await priceForRecord(db,body.service||'',body.start.slice(0,10));
         const result = await db.prepare('INSERT INTO appointments(patient_id,provider,start,end,room,service) VALUES(?,?,?,?,?,?)').run(body.patient_id, body.provider, body.start, body.end, body.room || '', body.service || '');
+        if(price)await snapshotPrice(db,'appointment',Number(result.lastInsertRowid),price,price.amount);
         if (body.package_id) await linkPackage(db, Number(result.lastInsertRowid), body.package_id);
       });
       await audit(user.id, 'appointments.create', 'new', null, body);
-      return response({
+      return auditedResponse({
         ok: true
       });
     }
     if (mod === 'clinical') {
       const clinician = ['doctor', 'physio', 'physio_lead'].includes(user.role);
-      if (method === 'GET') return response((await assignedScope(db, user, 'clinical')) ? await db.prepare('SELECT c.*,p.name patient,d.structured,d.episode_id FROM clinical c JOIN patients p ON p.id=c.patient_id LEFT JOIN clinical_details d ON d.clinical_id=c.id WHERE c.provider=? ORDER BY c.id DESC').all(user.id) : await db.prepare('SELECT c.*,p.name patient,d.structured,d.episode_id FROM clinical c JOIN patients p ON p.id=c.patient_id LEFT JOIN clinical_details d ON d.clinical_id=c.id ORDER BY c.id DESC').all());
-      if (!clinician) return response({
+      if (method === 'GET') return privateResponse((await assignedScope(db, user, 'clinical')) ? await db.prepare('SELECT c.*,p.name patient,d.structured,d.episode_id FROM clinical c JOIN patients p ON p.id=c.patient_id LEFT JOIN clinical_details d ON d.clinical_id=c.id WHERE c.provider=? ORDER BY c.id DESC').all(user.id) : await db.prepare('SELECT c.*,p.name patient,d.structured,d.episode_id FROM clinical c JOIN patients p ON p.id=c.patient_id LEFT JOIN clinical_details d ON d.clinical_id=c.id ORDER BY c.id DESC').all());
+      if (!clinician) return auditedResponse({
         error: 'التوثيق السريري للممارس المؤهل فقط'
       }, 403);
       if (body.id) {
         const before = await db.prepare('SELECT * FROM clinical WHERE id=? AND provider=?').get(body.id, user.id);
-        if (!before) return response({
+        if (!before) return auditedResponse({
           error: 'السجل غير متاح'
         }, 404);
-        if (before.approved) return response({
+        if (before.approved) return auditedResponse({
           error: 'السجل معتمد؛ استخدم إضافة موثقة'
         }, 409);
         if (body.action === 'approve') await approveClinicalSession(db, body.id, user.id);else await transaction(db, async () => {
@@ -618,20 +654,20 @@ async function handle(req, {
           }, user.id);
         });
         await audit(user.id, 'clinical.update', String(body.id), before, body);
-        return response({
+        return auditedResponse({
           ok: true
         });
       }
-      if (body.patient_id && !(await patientVisible(db, body.patient_id, user, 'clinical'))) return response({
+      if (body.patient_id && !(await patientVisible(db, body.patient_id, user, 'clinical'))) return auditedResponse({
         error: 'المريض خارج نطاق حسابك'
       }, 403);
-      if (!body.patient_id || !body.content || !body.episode) return response({
+      if (!body.patient_id || !body.content || !body.episode) return auditedResponse({
         error: 'المريض والحالة والمحتوى مطلوبون'
       }, 400);
-      if (body.kind === 'Addendum' && !body.parent_id) return response({
+      if (body.kind === 'Addendum' && !body.parent_id) return auditedResponse({
         error: 'الإضافة الموثقة تحتاج مرجعًا معتمدًا'
       }, 400);
-      if (body.parent_id && !(await db.prepare('SELECT id FROM clinical WHERE id=? AND provider=? AND patient_id=? AND episode=? AND approved=1').get(body.parent_id, user.id, body.patient_id, body.episode))) return response({
+      if (body.parent_id && !(await db.prepare('SELECT id FROM clinical WHERE id=? AND provider=? AND patient_id=? AND episode=? AND approved=1').get(body.parent_id, user.id, body.patient_id, body.episode))) return auditedResponse({
         error: 'الإضافة تحتاج سجلًا معتمدًا يخصك'
       }, 400);
       await transaction(db, async () => {
@@ -643,55 +679,55 @@ async function handle(req, {
         kind: body.kind,
         patient_id: body.patient_id
       });
-      return response({
+      return auditedResponse({
         ok: true
       });
     }
     if (mod === 'finance') {
-      if (method === 'GET') return response(await db.prepare('SELECT i.*,p.name patient FROM invoices i JOIN patients p ON p.id=i.patient_id ORDER BY i.id DESC').all());
+      if (method === 'GET') return privateResponse(await db.prepare('SELECT i.*,p.name patient FROM invoices i JOIN patients p ON p.id=i.patient_id ORDER BY i.id DESC').all());
       if (body.id) {
         const result = body.action === 'discount' ? await discountInvoice(db, body, user.id) : await recordPayment(db, body, user.id);
         await audit(user.id, 'finance.' + (body.action || 'payment'), String(body.id), result.before, result.after);
-        return response({
+        return auditedResponse({
           ok: true
         });
       }
       const amount = Number(body.amount);
-      if (!body.patient_id || !body.service || !Number.isFinite(amount) || amount <= 0) return response({
+      if (!body.patient_id || !body.service || !Number.isFinite(amount) || amount <= 0) return auditedResponse({
         error: 'راجع بيانات الفاتورة'
       }, 400);
-      await db.prepare('INSERT INTO invoices(patient_id,service,amount) VALUES(?,?,?)').run(body.patient_id, body.service, amount);
+      await transaction(db,async()=>{const price=await priceForRecord(db,body.service,undefined,amount);const result=await db.prepare('INSERT INTO invoices(patient_id,service,amount) VALUES(?,?,?)').run(body.patient_id,body.service,amount);if(price)await snapshotPrice(db,'invoice',Number(result.lastInsertRowid),price,amount)});
       await audit(user.id, 'finance.invoice', 'new', null, body);
-      return response({
+      return auditedResponse({
         ok: true
       });
     }
     if (mod === 'tasks') {
-      if (method === 'GET') return response(await db.prepare('SELECT t.*,u.name owner_name,CASE WHEN e.task_id IS NULL THEN 0 ELSE 1 END escalated FROM tasks t LEFT JOIN users u ON u.id=t.owner LEFT JOIN task_escalations e ON e.task_id=t.id WHERE ? OR t.owner=? OR e.owner=? ORDER BY due').all(Number(user.role === 'owner' || permissions.includes('tasks.approve')), user.id, user.id));
+      if (method === 'GET') return auditedResponse(await db.prepare('SELECT t.*,u.name owner_name,CASE WHEN e.task_id IS NULL THEN 0 ELSE 1 END escalated FROM tasks t LEFT JOIN users u ON u.id=t.owner LEFT JOIN task_escalations e ON e.task_id=t.id WHERE ? OR t.owner=? OR e.owner=? ORDER BY due').all(Number(user.role === 'owner' || permissions.includes('tasks.approve')), user.id, user.id));
       if (body.id) {
         const task = await db.prepare('SELECT * FROM tasks WHERE id=?').get(body.id);
-        if (!task || task.owner !== user.id && user.role !== 'owner' && !permissions.includes('tasks.approve')) return response({
+        if (!task || task.owner !== user.id && user.role !== 'owner' && !permissions.includes('tasks.approve')) return auditedResponse({
           error: 'المهمة غير متاحة للتعديل'
         }, 403);
-        if (body.status === 'Completed' && !body.evidence) return response({
+        if (body.status === 'Completed' && !body.evidence) return auditedResponse({
           error: 'دليل الإتمام مطلوب'
         }, 400);
-        if (!['Open', 'In Progress', 'Waiting', 'Completed', 'Cancelled'].includes(body.status)) return response({
+        if (!['Open', 'In Progress', 'Waiting', 'Completed', 'Cancelled'].includes(body.status)) return auditedResponse({
           error: 'حالة غير صحيحة'
         }, 400);
         await db.prepare('UPDATE tasks SET status=?,evidence=? WHERE id=?').run(body.status, body.evidence || '', body.id);
       } else {
-        if (!body.title || !(await db.prepare('SELECT id FROM users WHERE id=? AND active=1').get(body.owner)) || !body.due) return response({
+        if (!body.title || !(await db.prepare('SELECT id FROM users WHERE id=? AND active=1').get(body.owner)) || !body.due) return auditedResponse({
           error: 'العنوان والمسؤول والاستحقاق مطلوبون'
         }, 400);
         await db.prepare('INSERT INTO tasks(title,owner,due,priority) VALUES(?,?,?,?)').run(body.title, body.owner, body.due, body.priority || 'Normal');
       }
       await audit(user.id, 'tasks.save', String(body.id || 'new'), null, body);
-      return response({
+      return auditedResponse({
         ok: true
       });
     }
-    return response({
+    return auditedResponse({
       error: 'غير متاح'
     }, 404);
   } catch (e) {
@@ -705,6 +741,7 @@ let sqliteQueue=Promise.resolve();
 async function dispatch(req,context){
  const path=(await context.params).path.join('/');
  const demoRequest=path==='demo'||(req.headers.get('cookie')||'').includes('clinic_demo=')&&!['login','setup','automation/run'].includes(path);
+ checkProductionEnvironment();
  if(path==='environment')return response({demoAvailable:demoEnabled(),persistent:postgresConfigured(),demoOnly:process.env.CLINIC_DEMO_ONLY==='1'});
  if(postgresConfigured()&&!demoRequest&&process.env.CLINIC_DEMO_ONLY!=='1'){
   try{return await withPostgres(database=>handle(req,context,database));}catch(e){console.error('Database request failed',e.code||e.name);return response({error:'تعذر الاتصال بقاعدة البيانات؛ حاول لاحقًا'},503);}

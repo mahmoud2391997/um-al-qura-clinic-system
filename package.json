@@ -8,7 +8,9 @@
     "build": "next build",
     "start": "next start --hostname 127.0.0.1",
     "test": "CLINIC_DB=:memory: node --test tests/*.test.js",
-    "test:acceptance": "node scripts/acceptance.mjs"
+    "test:acceptance": "node scripts/acceptance.mjs",
+    "prestart": "node scripts/check-env.mjs",
+    "predeploy": "sh scripts/predeploy.sh"
   },
   "keywords": [],
   "author": "",

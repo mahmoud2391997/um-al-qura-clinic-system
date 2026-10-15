@@ -1,0 +1,23 @@
+node_modules
+**/node_modules
+.next
+**/.next
+.git
+.env
+.env.*
+**/.env
+**/.env.*
+/data
+/uploads
+**/*.sqlite*
+**/*.db*
+*.log
+tmp
+output
+
+!**/.env.example
+
+# Internal delivery artifacts are never application assets
+/owner-testing-guide-ar.pdf
+/riwaq-production-*.jpg
+/docs/*.pdf

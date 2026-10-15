@@ -1,0 +1,3 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {checkProductionEnvironment as check} from '../scripts/check-env.mjs';
+const valid={NODE_ENV:'production',DATABASE_URL:'postgresql://test:synthetic@127.0.0.1/test',CLINIC_SETUP_TOKEN:'s'.repeat(32),CLINIC_AUTOMATION_SECRET:'a'.repeat(32),CLINIC_BASE_URL:'https://clinic.example.test'};
+test('production refuses missing database, weak secret and unknown demo flag',()=>{check(valid);assert.throws(()=>check({...valid,DATABASE_URL:''}));assert.throws(()=>check({...valid,CLINIC_SETUP_TOKEN:'short'}));assert.throws(()=>check({...valid,DEMO_MODE:'maybe'}));check({NODE_ENV:'test'});});
