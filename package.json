@@ -10,7 +10,8 @@
     "test": "CLINIC_DB=:memory: node --test tests/*.test.js",
     "test:acceptance": "node scripts/acceptance.mjs",
     "prestart": "node scripts/check-env.mjs",
-    "predeploy": "sh scripts/predeploy.sh"
+    "predeploy": "sh scripts/predeploy.sh",
+    "test:local-mail": "node scripts/local-mail-acceptance.mjs"
   },
   "keywords": [],
   "author": "",
@@ -25,5 +26,8 @@
   },
   "engines": {
     "node": "22.x"
+  },
+  "devDependencies": {
+    "nodemailer": "^10.1.1"
   }
 }

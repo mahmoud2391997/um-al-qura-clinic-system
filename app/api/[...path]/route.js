@@ -195,7 +195,15 @@ async function handle(req, {
       error: 'سجّل الدخول أولًا'
     }, 401);
     const permissions = JSON.parse(user.permissions);
-    const auditedResponse=async (body,status=200)=>{if(method==='GET'&&status<400&&!['me'].includes(path))await audit(user.id,'data.read.success',path,null,{role:user.role,scopes:await roleScopes(db,user.role),count:Array.isArray(body)?body.length:1});return response(body,status)};
+    const auditedResponse = async (body, status = 200) => {
+      const metadata = {role: user.role, scopes: await roleScopes(db, user.role)};
+      if (method === 'GET' && path !== 'me' && status < 400) {
+        await audit(user.id, 'data.read.success', path, null, {...metadata, count: Array.isArray(body) ? body.length : 1});
+      } else if (status === 403 && (method === 'GET' || path === 'reports/export')) {
+        await audit(user.id, path === 'reports/export' ? 'data.export.denied' : 'data.read.denied', path, null, metadata);
+      }
+      return response(body, status);
+    };
     const readinessActor={...user,permissions};
     const readinessRoutes=['finance/service-prices','finance/below-cost','inventory/adjustment-policy','inventory/adjustment-requests','equipment/parts-issue','marketing/visits','reports/filtered'];
     if(readinessRoutes.includes(path)){
@@ -220,10 +228,8 @@ async function handle(req, {
       try { return auditedResponse(await patientProfile(db, Number(path.split('/')[2]), {...user,permissions})); }
       catch { return auditedResponse({error:'ملف المريض غير متاح'},403); }
     }
-    const privateResponse = async rows => {
-      await audit(user.id, 'data.read', path, null, {count: Array.isArray(rows) ? rows.length : 1});
-      return auditedResponse(rows);
-    };
+    // One consistent metadata-only event for scoped and ordinary reads.
+    const privateResponse = rows => auditedResponse(rows);
     if (req.method === 'GET') await tickAutomation(db);
     if (path === 'finance/staff') {
       if (method !== 'GET' || !allowed(user, permissions, 'finance', 'view')) return auditedResponse({
