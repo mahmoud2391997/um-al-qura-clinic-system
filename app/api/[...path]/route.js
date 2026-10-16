@@ -367,6 +367,11 @@ async function handle(req, {
         }, 400);
       }
     }
+    if(path==='quality/incidents/staff'){
+      try{incidentPermission({...user,permissions},'view');}catch{return auditedResponse({error:'Permission denied'},403);}
+      if(method!=='GET')return auditedResponse({error:'Read only'},405);
+      return auditedResponse(await db.prepare('SELECT id,name FROM users WHERE active=1 ORDER BY name').all());
+    }
     if(path==='quality/incidents'){
       const actor={...user,permissions};
       try{incidentPermission(actor,method==='GET'?'view':body.id?'edit':'create');}catch{return auditedResponse({error:'غير مصرح'},403);}
