@@ -21,3 +21,10 @@ output
 /owner-testing-guide-ar.pdf
 /riwaq-production-*.jpg
 /docs/*.pdf
+
+# Never copy local acceptance accounts, captures, or internal evidence into images
+.local
+**/.local
+playwright-report
+test-results
+docs/PRODUCTION-READINESS.md

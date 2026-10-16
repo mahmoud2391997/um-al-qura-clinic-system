@@ -10,6 +10,8 @@ import {randomBytes} from 'node:crypto';
 import {createRequire} from 'node:module';
 import {setTimeout as delay} from 'node:timers/promises';
 import {mailHandler} from '../infra/mail-adapter/server.mjs';
+import {verifyAuditMatrix} from './lib/audit-matrix.mjs';
+import {verifySecurityBoundary} from './lib/security-boundary.mjs';
 // Importing the database module must never open a normal workstation database.
 process.env.CLINIC_DB=':memory:';
 const {createDatabase,hashPassword}=await import('../lib/db.js');
@@ -41,8 +43,9 @@ try{
  app=spawn(process.execPath,['node_modules/next/dist/bin/next','dev','--hostname','127.0.0.1','--port',String(port)],{cwd:resolve('.'),env:{...process.env,NODE_ENV:'development',DATABASE_URL:'',VERCEL:'',CLINIC_DB:filename,CLINIC_DEMO_ONLY:'0',CLINIC_EMAIL_ENDPOINT:'https://localhost:'+adapter.address().port+'/send',CLINIC_EMAIL_KEY:key,CLINIC_BASE_URL:'https://localhost:'+port,NODE_EXTRA_CA_CERTS:join(directory,'cert.pem')}});
  app.stdout.on('data',x=>logs=(logs+x).slice(-12000));app.stderr.on('data',x=>logs=(logs+x).slice(-12000));
  let ready=false;for(let i=0;i<120;i++){try{const r=await fetch(base+'/api/setup');if(r.ok){ready=true;break}}catch{}await delay(500)}assert(ready,'Local application did not become ready');
- const call=async(path,body,cookie)=>{const r=await fetch(base+'/api/'+path,{method:body?'POST':'GET',headers:{origin:base,...(body?{'content-type':'application/json'}:{}),...(cookie?{cookie}:{})},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,value:await r.json(),cookie:r.headers.getSetCookie().find(x=>x.startsWith('clinic_session='))?.split(';')[0]}};
- const old=await call('login',{email:'owner@example.test',password});assert.equal(old.status,200);assert(old.cookie);
+ const call=async(path,body,cookie)=>{const r=await fetch(base+'/api/'+path,{method:body?'POST':'GET',headers:{origin:base,...(body?{'content-type':'application/json'}:{}),...(cookie?{cookie}:{})},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,value:await r.json(),cookieOptions:r.headers.getSetCookie().find(x=>x.startsWith('clinic_session=')),cookie:r.headers.getSetCookie().find(x=>x.startsWith('clinic_session='))?.split(';')[0]}};
+ if(process.env.CLINIC_SECURITY_ACCEPTANCE==='1')await verifySecurityBoundary({base,call});
+ const old=await call('login',{email:'owner@example.test',password});assert.equal(old.status,200);assert(old.cookie);assert(old.cookieOptions.includes('HttpOnly'));assert(old.cookieOptions.includes('SameSite=strict'));assert(old.cookieOptions.includes('Path=/'));assert(old.cookieOptions.includes('Max-Age=28800'));assert(!old.cookieOptions.includes('Secure'),'Loopback development cookie is intentionally HTTP; production uses Secure in source');
  assert.equal((await call('password/request-reset',{email:'owner@example.test'})).status,200);assert.equal(messages.length,1);
  // Decode MIME quoted-printable wrapping before extracting the reset URL; never log it.
  const [headers,...bodyParts]=messages[0].split('\r\n\r\n');
@@ -68,6 +71,7 @@ try{
  const ownRead=rows.filter(x=>x.actor==='acceptance-physio'&&x.action==='data.read.success'&&x.entity==='patients');assert.equal(ownRead.length,1);assert.equal(JSON.parse(ownRead[0].after_value).count,1);
  const ownExport=rows.find(x=>x.actor==='acceptance-physio'&&x.action==='data.export'&&x.entity==='patients');assert.equal(JSON.parse(ownExport.after_value).count,1);assert.equal(JSON.parse(ownExport.after_value).scopes.patients,'assigned');
  for(const row of rows){const metadata=JSON.parse(row.after_value);assert(metadata.role);assert(metadata.scopes);assert(!row.after_value.includes('SYNTHETIC'));assert(!row.after_value.includes(token));}
+ if(process.env.CLINIC_AUDIT_MATRIX==='1')await verifyAuditMatrix({call,db,cookie:owner.cookie});
  db.close();transport.close();console.log('PASS: actual request-reset -> trusted local HTTPS adapter -> SMTP catcher -> reset -> new login; old password/session and reused token denied. Scoped reads, forbidden profile/users/export and metadata-only audits verified.');
 }catch(error){console.error('Local acceptance failed:',error.message, error.stack?.split('\n').find(x=>x.includes('local-mail-acceptance.mjs:')));process.exitCode=1;}finally{
  if(app){app.kill('SIGTERM');await Promise.race([new Promise(r=>app.once('exit',r)),delay(5000)]);if(app.exitCode===null)app.kill('SIGKILL');}
