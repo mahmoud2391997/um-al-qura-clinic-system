@@ -1,10 +1,22 @@
 {
  email {$TLS_EMAIL}
 }
+(security_headers) {
+ header {
+  Strict-Transport-Security "max-age=15552000"
+  X-Content-Type-Options "nosniff"
+  X-Frame-Options "DENY"
+  Referrer-Policy "strict-origin-when-cross-origin"
+  Permissions-Policy "camera=(), microphone=(), geolocation=()"
+  -Server
+ }
+}
 {$FACTORY_DOMAIN} {
+ import security_headers
  reverse_proxy factory:3000
 }
 {$CLINIC_DOMAIN} {
+ import security_headers
  handle_path /internal-mail/* {
   reverse_proxy mail-adapter:3000
  }
@@ -13,11 +25,14 @@
  }
 }
 {$EMPLOYEES_DOMAIN} {
+ import security_headers
  reverse_proxy employees:3000
 }
 {$FEED_DOMAIN} {
+ import security_headers
  reverse_proxy feed-site:3000
 }
 {$MEDICAL_DOMAIN} {
+ import security_headers
  reverse_proxy medical-site:8080
 }

@@ -8,7 +8,8 @@ export function mailHandler({key,send}){
  if(!timingSafeEqual(digest(req.headers.authorization||''),digest('Bearer '+key)))return reply(401,{ok:false});
  try{let body='';for await(const chunk of req){body+=chunk;if(Buffer.byteLength(body)>16384)return reply(413,{ok:false})}const value=JSON.parse(body);
  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.to||'')||typeof value.subject!=='string'||!value.subject.trim()||value.subject.length>200||/[\r\n]/.test(value.subject)||typeof value.text!=='string'||!value.text.trim()||value.text.length>12000)return reply(400,{ok:false});
- await send({to:value.to,subject:value.subject,text:value.text});reply(200,{ok:true});
+ if(value.messageId!==undefined&&(typeof value.messageId!=='string'||!/^<[A-Za-z0-9._-]+@[A-Za-z0-9.-]+>$/.test(value.messageId)||value.messageId.length>200))return reply(400,{ok:false});
+ await send({to:value.to,subject:value.subject,text:value.text,...(value.messageId?{messageId:value.messageId}:{})});reply(200,{ok:true});
  }catch{reply(502,{ok:false})}
  };
 }

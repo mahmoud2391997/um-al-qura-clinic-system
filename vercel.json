@@ -4,5 +4,10 @@
     "CLINIC_DEMO": "1",
     "CLINIC_DEMO_ONLY": "0"
   },
-  "buildCommand": "CLINIC_DB=:memory: CLINIC_DEMO=1 CLINIC_DEMO_ONLY=1 npm test && npm run build"
+  "buildCommand": "CLINIC_DB=:memory: CLINIC_DEMO=1 CLINIC_DEMO_ONLY=1 npm test && npm run build",
+  "git": {
+    "deploymentEnabled": {
+      "prod-readiness/**": false
+    }
+  }
 }
