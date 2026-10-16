@@ -15,7 +15,8 @@
     "test:audit": "CLINIC_AUDIT_MATRIX=1 node scripts/local-mail-acceptance.mjs",
     "test:ui": "node scripts/ui-acceptance.mjs",
     "test:security": "CLINIC_SECURITY_ACCEPTANCE=1 node scripts/local-mail-acceptance.mjs",
-    "guides": "node scripts/generate-role-guides.mjs"
+    "guides": "node scripts/generate-role-guides.mjs",
+    "test:ui-language": "node scripts/ui-language-acceptance.mjs"
   },
   "keywords": [],
   "author": "",

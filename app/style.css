@@ -18,3 +18,11 @@ aside{overflow:hidden}aside nav{flex:1;min-height:0;overflow-y:auto;align-conten
 .sidebarcollapsed #sidebar-navigation .navicon{display:block;width:20px;height:20px;margin:0;flex:0 0 20px}
 }
 .navtools{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;flex-shrink:0}.navtools .navlabel{margin:0 4px}.allgroupstoggle{background:#edf5f2;color:#4c766c;display:flex;align-items:center;justify-content:center;gap:6px;padding:6px 9px;font-size:10px;border-radius:8px}.allgroupstoggle>span:first-child{font-size:17px;line-height:1}.sidebarcollapsed .navtools{justify-content:center;margin-bottom:0}.sidebarcollapsed .allgroupstoggle{width:34px;height:34px;padding:0}.sidebarcollapsed .navtools .navlabel{display:none}@media(max-width:700px){.navtools{justify-content:flex-end;margin-bottom:8px}}
+
+/* Language selection changes presentation only; saved records and API values stay unchanged. */
+.languagebar{display:flex;justify-content:flex-end;padding:10px 20px 0;gap:8px;background:var(--bg)}
+html[dir=ltr] nav button,html[dir=ltr] .identity button,html[dir=ltr] .auth form,html[dir=ltr] th:first-child{text-align:left}
+html[dir=ltr] aside{border-left:0;border-right:1px solid var(--border)}
+html[dir=ltr] .subnav{border-right:0;border-left:1px solid var(--border);margin-right:0;margin-left:14px;padding-right:0;padding-left:8px}
+html[lang=en] body{font-family:Arial,'Noto Sans Arabic',sans-serif}
+@media(max-width:700px){.languagebar{padding:8px 14px 0}html[dir=ltr] aside{border-right:0}}
