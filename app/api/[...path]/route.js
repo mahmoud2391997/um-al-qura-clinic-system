@@ -1,3 +1,4 @@
+import {dashboardSummary} from '../../../lib/dashboard.js';
 import {listIncidents,saveIncident,incidentPermission} from '../../../lib/quality-incidents.js';
 import {saveServicePrice,listServicePrices,priceForRecord,snapshotPrice,requestBelowCost,decideBelowCost,setAdjustmentPolicy,requestAdjustment,decideAdjustment,issueMaintenancePart,linkLeadVisit,funnelMetrics,filteredReport} from '../../../lib/readiness-workflows.js';
 import { checkProductionEnvironment } from '../../../scripts/check-env.mjs';
@@ -367,6 +368,7 @@ async function handle(req, {
         }, 400);
       }
     }
+    if(path==='dashboard'){if(method!=='GET')return auditedResponse({error:'Read only'},405);return auditedResponse(await dashboardSummary(db,{...user,permissions}));}
     if(path==='quality/incidents/staff'){
       try{incidentPermission({...user,permissions},'view');}catch{return auditedResponse({error:'Permission denied'},403);}
       if(method!=='GET')return auditedResponse({error:'Read only'},405);
