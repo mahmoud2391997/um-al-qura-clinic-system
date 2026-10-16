@@ -11,6 +11,7 @@ import {randomBytes} from 'node:crypto';
 import {createRequire} from 'node:module';
 import {setTimeout as delay} from 'node:timers/promises';
 import {mailHandler} from '../infra/mail-adapter/server.mjs';
+import {verifyReportFiles} from './lib/report-file-acceptance.mjs';
 import {verifyAuditMatrix} from './lib/audit-matrix.mjs';
 import {verifySecurityBoundary} from './lib/security-boundary.mjs';
 // Importing the database module must never open a normal workstation database.
@@ -74,6 +75,7 @@ try{
  for(const row of rows){const metadata=JSON.parse(row.after_value);assert(metadata.role);assert(metadata.scopes);assert(!row.after_value.includes('SYNTHETIC'));assert(!row.after_value.includes(token));}
  if(process.env.CLINIC_AUDIT_MATRIX==='1')await verifyAuditMatrix({call,db,cookie:owner.cookie});
  if(process.env.CLINIC_ASSETS_ACCEPTANCE==='1')await verifyAssets({call,db,ownerCookie:owner.cookie,deniedCookie:clinician.cookie});
+ await verifyReportFiles({base,db,owner:owner.cookie,clinician:clinician.cookie});
  db.close();transport.close();console.log('PASS: actual request-reset -> trusted local HTTPS adapter -> SMTP catcher -> reset -> new login; old password/session and reused token denied. Scoped reads, forbidden profile/users/export and metadata-only audits verified.');
 }catch(error){console.error('Local acceptance failed:',error.message, error.stack?.split('\n').find(x=>x.includes('local-mail-acceptance.mjs:')));process.exitCode=1;}finally{
  if(app){app.kill('SIGTERM');await Promise.race([new Promise(r=>app.once('exit',r)),delay(5000)]);if(app.exitCode===null)app.kill('SIGKILL');}

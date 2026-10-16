@@ -15,6 +15,7 @@ import { loginAllowed, loginFailure, loginSuccess, revokeSessions } from '../../
 import { documentPaths, documentTargets, listDocuments, saveDocument } from '../../../lib/documents.js';
 import { followupProgram } from '../../../lib/clinical-programs.js';
 import { exportRows, toCsv } from '../../../lib/exports.js';
+import { toPdf, toXlsx } from '../../../lib/report-files.js';
 import { rescheduleAppointment } from '../../../lib/appointment-workflow.js';
 import { tickAutomation, saveAutomation } from '../../../lib/automation.js';
 import { extraPaths, listExtras, saveExtras } from '../../../lib/purchasing-extras.js';
@@ -306,12 +307,17 @@ async function handle(req, {
     }
     if (path === 'reports/export' && method === 'POST') {
       try {
-        return auditedResponse({
-          csv: toCsv(await exportRows(db, String(body.path), {
-            ...user,
-            permissions
-          }))
-        });
+        const format = body.format || 'csv';
+        if (!['csv', 'pdf', 'xlsx'].includes(format)) throw Error('صيغة التقرير غير متاحة');
+        const actor = { ...user, permissions };
+        if (format === 'csv') return auditedResponse({csv: toCsv(await exportRows(db, String(body.path), actor))});
+        const file = await exportRows(db, String(body.path), actor, {format, render: format === 'pdf' ? toPdf : toXlsx});
+        return new Response(file, {headers:{
+          'Content-Type': format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'Content-Disposition': `attachment; filename="clinic-report.${format}"`,
+          'Cache-Control':'no-store',
+          'X-Content-Type-Options':'nosniff',
+        }});
       } catch (e) {
         return auditedResponse({
           error: e.message
