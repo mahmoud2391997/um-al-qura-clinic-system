@@ -11,7 +11,11 @@
     "test:acceptance": "node scripts/acceptance.mjs",
     "prestart": "node scripts/check-env.mjs",
     "predeploy": "sh scripts/predeploy.sh",
-    "test:local-mail": "node scripts/local-mail-acceptance.mjs"
+    "test:local-mail": "node scripts/local-mail-acceptance.mjs",
+    "test:audit": "CLINIC_AUDIT_MATRIX=1 node scripts/local-mail-acceptance.mjs",
+    "test:ui": "node scripts/ui-acceptance.mjs",
+    "test:security": "CLINIC_SECURITY_ACCEPTANCE=1 node scripts/local-mail-acceptance.mjs",
+    "guides": "node scripts/generate-role-guides.mjs"
   },
   "keywords": [],
   "author": "",
@@ -28,6 +32,8 @@
     "node": "22.x"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "acorn": "^8.19.0",
     "nodemailer": "^10.1.1"
   }
 }

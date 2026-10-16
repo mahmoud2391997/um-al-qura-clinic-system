@@ -33,7 +33,8 @@ import { listOperations, saveOperation } from '../../../lib/operations.js';
 import { allowed, validPermissions } from '../../../lib/permissions.js';
 export const runtime = 'nodejs';
 const response = (x, status = 200) => NextResponse.json(x, {
-  status
+  status,
+  headers: {'Cache-Control':'private, no-store', Vary:'Cookie'}
 });
 async function handle(req, {
   params
@@ -195,14 +196,16 @@ async function handle(req, {
       error: 'سجّل الدخول أولًا'
     }, 401);
     const permissions = JSON.parse(user.permissions);
-    const auditedResponse = async (body, status = 200) => {
+    const auditedResponse = async (payload, status = 200) => {
       const metadata = {role: user.role, scopes: await roleScopes(db, user.role)};
       if (method === 'GET' && path !== 'me' && status < 400) {
-        await audit(user.id, 'data.read.success', path, null, {...metadata, count: Array.isArray(body) ? body.length : 1});
+        await audit(user.id, 'data.read.success', path, null, {...metadata, count: Array.isArray(payload) ? payload.length : 1});
+      } else if (method === 'POST' && body.action === 'download') {
+        await audit(user.id, status < 400 ? 'data.download.success' : 'data.download.denied', path, null, {...metadata, count: status < 400 ? 1 : 0});
       } else if (status === 403 && (method === 'GET' || path === 'reports/export')) {
         await audit(user.id, path === 'reports/export' ? 'data.export.denied' : 'data.read.denied', path, null, metadata);
       }
-      return response(body, status);
+      return response(payload, status);
     };
     const readinessActor={...user,permissions};
     const readinessRoutes=['finance/service-prices','finance/below-cost','inventory/adjustment-policy','inventory/adjustment-requests','equipment/parts-issue','marketing/visits','reports/filtered'];
@@ -231,6 +234,10 @@ async function handle(req, {
     // One consistent metadata-only event for scoped and ordinary reads.
     const privateResponse = rows => auditedResponse(rows);
     if (req.method === 'GET') await tickAutomation(db);
+    if (path === 'appointments/staff' && method === 'GET') {
+      if (!allowed(user, permissions, 'appointments', 'view')) return auditedResponse({error:'صلاحية المواعيد مطلوبة'},403);
+      return auditedResponse(await db.prepare("SELECT id,name FROM users WHERE active=1 AND role IN ('doctor','physio','physio_lead') ORDER BY name").all());
+    }
     if (path === 'finance/staff') {
       if (method !== 'GET' || !allowed(user, permissions, 'finance', 'view')) return auditedResponse({
         error: 'صلاحية المالية مطلوبة'
