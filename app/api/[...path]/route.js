@@ -338,7 +338,7 @@ async function handle(req, {
         }, 400);
       }
     }
-    if (path.startsWith('purchasing/')) {
+    if (path.startsWith('purchasing/') && path !== 'purchasing/vendors') {
       if (!['purchasing/requests', 'purchasing/orders', 'purchasing/receipts', 'purchasing/catalog'].includes(path)) return auditedResponse({
         error: 'المسار غير موجود'
       }, 404);

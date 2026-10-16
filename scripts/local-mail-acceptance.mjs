@@ -1,3 +1,4 @@
+import {verifyAssets} from './lib/assets-acceptance.mjs';
 // Synthetic, loopback-only acceptance: HTTPS adapter -> SMTP catcher -> actual clinic routes.
 import assert from 'node:assert/strict';
 import {createServer as httpsServer} from 'node:https';
@@ -72,6 +73,7 @@ try{
  const ownExport=rows.find(x=>x.actor==='acceptance-physio'&&x.action==='data.export'&&x.entity==='patients');assert.equal(JSON.parse(ownExport.after_value).count,1);assert.equal(JSON.parse(ownExport.after_value).scopes.patients,'assigned');
  for(const row of rows){const metadata=JSON.parse(row.after_value);assert(metadata.role);assert(metadata.scopes);assert(!row.after_value.includes('SYNTHETIC'));assert(!row.after_value.includes(token));}
  if(process.env.CLINIC_AUDIT_MATRIX==='1')await verifyAuditMatrix({call,db,cookie:owner.cookie});
+ if(process.env.CLINIC_ASSETS_ACCEPTANCE==='1')await verifyAssets({call,db,ownerCookie:owner.cookie,deniedCookie:clinician.cookie});
  db.close();transport.close();console.log('PASS: actual request-reset -> trusted local HTTPS adapter -> SMTP catcher -> reset -> new login; old password/session and reused token denied. Scoped reads, forbidden profile/users/export and metadata-only audits verified.');
 }catch(error){console.error('Local acceptance failed:',error.message, error.stack?.split('\n').find(x=>x.includes('local-mail-acceptance.mjs:')));process.exitCode=1;}finally{
  if(app){app.kill('SIGTERM');await Promise.race([new Promise(r=>app.once('exit',r)),delay(5000)]);if(app.exitCode===null)app.kill('SIGKILL');}
