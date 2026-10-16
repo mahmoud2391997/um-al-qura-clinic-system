@@ -1,3 +1,4 @@
+import {listIncidents,saveIncident,incidentPermission} from '../../../lib/quality-incidents.js';
 import {saveServicePrice,listServicePrices,priceForRecord,snapshotPrice,requestBelowCost,decideBelowCost,setAdjustmentPolicy,requestAdjustment,decideAdjustment,issueMaintenancePart,linkLeadVisit,funnelMetrics,filteredReport} from '../../../lib/readiness-workflows.js';
 import { checkProductionEnvironment } from '../../../scripts/check-env.mjs';
 import { patientProfile, linkPatientTask } from '../../../lib/patient-profile.js';
@@ -359,6 +360,11 @@ async function handle(req, {
           error: e.message
         }, 400);
       }
+    }
+    if(path==='quality/incidents'){
+      const actor={...user,permissions};
+      try{incidentPermission(actor,method==='GET'?'view':body.id?'edit':'create');}catch{return auditedResponse({error:'غير مصرح'},403);}
+      try{return auditedResponse(method==='GET'?await listIncidents(db,actor):await saveIncident(db,body,actor));}catch(e){return auditedResponse({error:e.message},400);}
     }
     const mod = path.split('/')[0];
     const action = method === 'GET' ? 'view' : ['approve', 'refund', 'discount'].includes(body.action) || ['finance/approvals', 'finance/package-returns', 'finance/corrections'].includes(path) && body.action === 'reject' ? 'approve' : body.id ? 'edit' : 'create';
