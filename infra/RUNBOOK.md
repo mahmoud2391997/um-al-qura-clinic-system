@@ -4,7 +4,7 @@ No live environment has been changed. Owner approval of business content, domain
 
 ## First setup
 
-Use Node 22, Docker Engine and Compose v2 on a Linux VPS. Set PROJECTS_DIR to the absolute directory containing checkouts named factory, clinic, employees, feed-site and medical-site. Identical infra copies are delivered in all five repositories; operate only one stack, with one private CONFIG_DIR. Do not copy local `.env`, databases, credentials PDFs or test artifacts onto the server or into Git.
+Use Node 22, Docker Engine and Compose v2 on a Linux VPS. Set PROJECTS_DIR to the absolute directory containing checkouts named factory, clinic, employees, feed-site and medical-site. Identical infra copies are delivered in factory, clinic, employees and feed-site; the medical-site copy remains local by owner decision. Operate only one stack, with one private CONFIG_DIR. Do not copy local `.env`, databases, credentials PDFs or test artifacts onto the server or into Git.
 
 Set `CONFIG_DIR` to an absolute private directory outside this repository, typically `/etc/five-projects`. Run `node scripts/configure.mjs` once. It creates private 0600 files and a backup key without displaying credentials and preserves existing files. Complete the generated gateway hostnames, clinic HTTPS base URL, company identity/admin email, site origin and approved communication settings. These values intentionally have no business defaults. Keep a copy of the backup key separate from encrypted backups. Database ports have no host mapping and are on an internal-only network.
 
@@ -60,3 +60,22 @@ Create a NEW compose project with separate private configuration, unused localho
 Create stopped factory/feed containers, copy snapshot factory-files contents to /app/data and feed-data contents to /data, then set volume ownership to UID/GID1000 and private directory permissions before starting the nonroot apps. Do not copy file snapshots while writers are active. Run `up -d --no-build --wait`, verify every proxy health route, log in using synthetic restored users, download protected factory and clinic attachments and compare bytes, then verify feed SQLite integrity. This rehearsal was executed locally on 2026-10-15; all five proxy routes returned200 and both protected attachment downloads and workforce login passed. The database-only restore script is still not a substitute for this application rehearsal; repeat after schema/storage changes.
 
 Shell tools are invoked with `sh` so browser-uploaded checkouts also work when executable bits are not preserved. Docker explicitly enables its required static-site entrypoint.
+
+
+## Cross-check copied operations source
+
+Before reviewing an operations release, set PROJECTS_DIR to the four candidate checkouts and run `sh infra/check-copies.sh` from any repository root (or `sh ./check-copies.sh` from infra). It compares relative file sets and SHA-256 content, rejects a missing or divergent copy, and ignores local backup/lock/dependency state. M is deliberately excluded. This does not choose the long-term copied-versus-private-repository policy.
+
+## Optional inquiry notifications
+
+The feed inquiry server stores a pending notification atomically with each new inquiry. The outbox timer invokes `node server/inquiry-notifications.mjs`; with no inquiry mail settings it leaves pending rows untouched. Only configure INQUIRY_EMAIL_URL (generic adapter HTTPS /send endpoint), INQUIRY_EMAIL_KEY (private bearer key) and INQUIRY_EMAIL_TO after the owner selects a provider and recipient. PUBLIC_URL must be the approved HTTPS site origin. The adapter forwards a stable optional Message-ID. Messages contain only the request identifier and admin link, not customer contact details. SENDING or UNCERTAIN rows are held after a crash/unclear delivery: consult provider and operator evidence before any manual recovery; never reset them blindly. Sales admin has explicit unread markers and an authenticated CSV export capped at10000 rows. The default public inquiry channel remains WhatsApp until the owner decides otherwise.
+
+The application trusts exactly one forwarding hop only when its immediate socket peer matches an explicit trusted gateway IP. Compose startup resolves gateway addresses; after recreating the gateway, restart feed-site so the trusted address set is refreshed. For a different local topology provide INQUIRY_TRUSTED_PROXY_IPS as an explicit comma-separated IP list. Do not trust arbitrary Internet addresses or publish the app port directly.
+
+## Measuring backup outage without changing consistency
+
+backup.sh now emits writer_stop_started_ms, writer_restart_finished_ms, writer_outage_ms and restart_ok. The interval includes stop, snapshot, encryption, off-server hook and restart command duration; it is NOT a health-ready or user-visible availability measurement. Pair it with check-uptime.sh and inspect restart_ok. No new timing result is claimed until the full Compose drill runs on realistic synthetic volume.
+
+Current stop-all-writers behavior is preserved. An online pg_dump can reduce database pause time, but independent database dumps and later file copies are not automatically a mutually consistent cross-application snapshot. A future proposal should keep immutable file objects/versioned references or coordinate database snapshots and a short file quiesce; benchmark and restore that candidate before owner approval. Do not silently replace the consistent offline procedure.
+
+Proposed operator review window:02:00-02:15 Asia/Muscat (Oman UTC+4), only after the owner confirms this is quiet and approves the measured outage/recovery budgets. This is a proposal, not an installed timer or an availability promise.
