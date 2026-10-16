@@ -21,3 +21,10 @@ test('one-time incident owner upgrade preserves other roles and later owner edit
  db.prepare("UPDATE roles SET permissions=? WHERE id='owner'").run(JSON.stringify(['patients.view']));migrateQualitySqlite(db);assert.deepEqual(JSON.parse(db.prepare("SELECT permissions FROM roles WHERE id='owner'").get().permissions),['patients.view']);
  }finally{db.close()}
 });
+
+test('PostgreSQL owner incident upgrade is additive and does not restore removed grants',{skip:process.env.CLINIC_TEST_POSTGRES!=='1'},()=>fixture('postgres',async db=>{
+ const {migrateQualityPostgres}=await import('../lib/quality-schema.js');
+ await db.prepare("UPDATE roles SET permissions=? WHERE id='owner'").run(JSON.stringify(['patients.view']));const before=(await db.prepare("SELECT permissions FROM roles WHERE id='quality'").get()).permissions;
+ await migrateQualityPostgres(db.client);const upgraded=JSON.parse((await db.prepare("SELECT permissions FROM roles WHERE id='owner'").get()).permissions);assert(upgraded.includes('patients.view'));assert(upgraded.includes('incidents.approve'));assert.equal((await db.prepare("SELECT permissions FROM roles WHERE id='quality'").get()).permissions,before);
+ await db.prepare("UPDATE roles SET permissions=? WHERE id='owner'").run(JSON.stringify(['patients.view']));await migrateQualityPostgres(db.client);assert.deepEqual(JSON.parse((await db.prepare("SELECT permissions FROM roles WHERE id='owner'").get()).permissions),['patients.view']);
+}));
