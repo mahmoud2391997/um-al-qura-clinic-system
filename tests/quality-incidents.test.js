@@ -13,3 +13,11 @@ for(const dialect of ['sqlite','postgres'])test(dialect+': restricted incidents 
  await assert.rejects(()=>saveIncident(db,{...row,status:'Open'},owner),/المغلق/);await assert.rejects(()=>exportRows(db,'quality/incidents',editor),/صلاحية/);assert.equal((await exportRows(db,'quality/incidents',owner)).length,1);
  const audits=await db.prepare("SELECT * FROM audit WHERE action LIKE 'quality.incident.%'").all();assert.equal(audits.length,3);assert(!JSON.stringify(audits).includes('Sensitive synthetic narrative'));assert.equal((await db.prepare("SELECT COUNT(*) n FROM audit WHERE action='data.export'").get()).n,1);
 }));
+
+test('one-time incident owner upgrade preserves other roles and later owner edits',async()=>{
+ const {migrateQualitySqlite}=await import('../lib/quality-schema.js');const db=createDatabase(':memory:');try{
+ db.prepare('DELETE FROM clinic_quality_migrations').run();db.prepare("UPDATE roles SET permissions=? WHERE id='owner'").run(JSON.stringify(['patients.view']));const before=db.prepare("SELECT permissions FROM roles WHERE id='quality'").get().permissions;
+ migrateQualitySqlite(db);const permissions=JSON.parse(db.prepare("SELECT permissions FROM roles WHERE id='owner'").get().permissions);assert(permissions.includes('patients.view'));assert(permissions.includes('incidents.approve'));assert.equal(db.prepare("SELECT permissions FROM roles WHERE id='quality'").get().permissions,before);
+ db.prepare("UPDATE roles SET permissions=? WHERE id='owner'").run(JSON.stringify(['patients.view']));migrateQualitySqlite(db);assert.deepEqual(JSON.parse(db.prepare("SELECT permissions FROM roles WHERE id='owner'").get().permissions),['patients.view']);
+ }finally{db.close()}
+});

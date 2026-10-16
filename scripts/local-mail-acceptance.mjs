@@ -1,3 +1,4 @@
+import {verifyIncidents} from './lib/incidents-acceptance.mjs';
 import {verifyAssets} from './lib/assets-acceptance.mjs';
 // Synthetic, loopback-only acceptance: HTTPS adapter -> SMTP catcher -> actual clinic routes.
 import assert from 'node:assert/strict';
@@ -75,6 +76,7 @@ try{
  for(const row of rows){const metadata=JSON.parse(row.after_value);assert(metadata.role);assert(metadata.scopes);assert(!row.after_value.includes('SYNTHETIC'));assert(!row.after_value.includes(token));}
  if(process.env.CLINIC_AUDIT_MATRIX==='1')await verifyAuditMatrix({call,db,cookie:owner.cookie});
  if(process.env.CLINIC_ASSETS_ACCEPTANCE==='1')await verifyAssets({call,db,ownerCookie:owner.cookie,deniedCookie:clinician.cookie});
+ if(process.env.CLINIC_COMPLETION_ACCEPTANCE==='1')await verifyIncidents({call,db,ownerCookie:owner.cookie,deniedCookie:clinician.cookie});
  await verifyReportFiles({base,db,owner:owner.cookie,clinician:clinician.cookie});
  db.close();transport.close();console.log('PASS: actual request-reset -> trusted local HTTPS adapter -> SMTP catcher -> reset -> new login; old password/session and reused token denied. Scoped reads, forbidden profile/users/export and metadata-only audits verified.');
 }catch(error){console.error('Local acceptance failed:',error.message, error.stack?.split('\n').find(x=>x.includes('local-mail-acceptance.mjs:')));process.exitCode=1;}finally{
