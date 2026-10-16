@@ -374,7 +374,7 @@ async function handle(req, {
     }
     if(path==='quality/incidents'){
       const actor={...user,permissions};
-      try{incidentPermission(actor,method==='GET'?'view':body.id?'edit':'create');}catch{return auditedResponse({error:'غير مصرح'},403);}
+      try{incidentPermission(actor,method==='GET'?'view':body.id?'edit':'create');if(method==='POST'&&body.status==='Closed')incidentPermission(actor,'approve');}catch{return auditedResponse({error:'غير مصرح'},403);}
       try{return auditedResponse(method==='GET'?await listIncidents(db,actor):await saveIncident(db,body,actor));}catch(e){return auditedResponse({error:e.message},400);}
     }
     const mod = path.split('/')[0];
