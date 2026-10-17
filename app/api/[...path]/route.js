@@ -1,3 +1,4 @@
+import {quickBook} from '../../../lib/quick-booking.js';
 import {dashboardSummary} from '../../../lib/dashboard.js';
 import {listIncidents,saveIncident,incidentPermission} from '../../../lib/quality-incidents.js';
 import {saveServicePrice,listServicePrices,priceForRecord,snapshotPrice,requestBelowCost,decideBelowCost,setAdjustmentPolicy,requestAdjustment,decideAdjustment,issueMaintenancePart,linkLeadVisit,funnelMetrics,filteredReport} from '../../../lib/readiness-workflows.js';
@@ -211,6 +212,7 @@ async function handle(req, {
       return response(payload, status);
     };
     const readinessActor={...user,permissions};
+    if(path==='appointments/book'){if(method!=='POST')return auditedResponse({error:'غير متاح'},405);try{return auditedResponse(await quickBook(db,body,{...user,permissions}));}catch(e){return auditedResponse({error:e.message},e.status||400);}}
     const readinessRoutes=['finance/service-prices','finance/below-cost','inventory/adjustment-policy','inventory/adjustment-requests','equipment/parts-issue','marketing/visits','reports/filtered'];
     if(readinessRoutes.includes(path)){
       try{

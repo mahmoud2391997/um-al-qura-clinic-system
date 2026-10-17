@@ -22,3 +22,5 @@ Verification:
 - `npm run test:ui-language`
 
 The browser acceptance runs only against a disposable synthetic SQLite file on loopback, at390px. It verifies Arabic default, English login, language persistence, live form preservation when toggling, English patient/booking/clinical/invoice-payment/task-completion writes, unchanged Arabic record values/internal enums, PDF/Excel button downloads, no horizontal page overflow, no browser exceptions, and restoring Arabic. It does not claim deployment or production database acceptance. Screenshots are local and ignored by Git.
+
+The proposed role-first navigation, mobile controls, booking panel and global-search controls include English labels. Owner setup guidance, role help and advanced service-duration administration retain the documented Arabic fallback. Proposed Arabic navigation wording and per-role ordering still require owner review; this branch is not an approved production release.
