@@ -20,7 +20,7 @@ try{
   if(width===390&&await menu.count())await page.getByRole('button',{name:'إغلاق القائمة',exact:true}).click();
   if(role==='reception'){
    await page.getByRole('button',{name:'حجز موعد',exact:false}).click();await expect(page.locator('form')).toBeVisible();
-   entry.appointmentForm=await page.locator('form').evaluate(el=>({visibleFields:[...el.querySelectorAll('input,select,textarea')].filter(x=>x.getClientRects().length).map(x=>({label:x.closest('label')?.textContent.trim(),required:x.required})),formTop:Math.round(el.getBoundingClientRect().top),documentHeight:document.documentElement.scrollHeight}));
+   entry.appointmentForm=await page.locator('form').evaluate(el=>({visibleFields:[...el.querySelectorAll('input,select,textarea')].filter(x=>x.getClientRects().length&&!x.closest('details:not([open])')).map(x=>({label:x.closest('label')?.textContent.trim(),required:x.required})),formTop:Math.round(el.getBoundingClientRect().top),documentHeight:document.documentElement.scrollHeight}));
    await page.screenshot({path:resolve(output,'appointment-'+width+'.png'),fullPage:true});
   }
   results.push(entry);await context.close();
