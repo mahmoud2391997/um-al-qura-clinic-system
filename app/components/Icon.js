@@ -1,4 +1,5 @@
 const paths={
+dashboard:<><path d="M3 3h7v7H3ZM14 3h7v7h-7ZM3 14h7v7H3ZM14 14h7v7h-7Z"/></>,
 'finance/corrections':<><path d="M3 5h14v14H3ZM7 9h6M7 13h3M19 5v14m-2-3 2 3 2-3"/></>,
 'finance/package-returns':<><path d="M4 4h14v16H4M9 8l-4 4 4 4M5 12h16"/></>,
 'finance/session-billing':<><path d="M3 4h7v16H3ZM14 4h7v16h-7M7 8h10M7 12h10M7 16h10"/></>,

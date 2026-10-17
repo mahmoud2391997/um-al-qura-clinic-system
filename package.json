@@ -16,7 +16,8 @@
     "test:ui": "node scripts/ui-acceptance.mjs",
     "test:security": "CLINIC_SECURITY_ACCEPTANCE=1 node scripts/local-mail-acceptance.mjs",
     "guides": "node scripts/generate-role-guides.mjs",
-    "test:ui-language": "node scripts/ui-language-acceptance.mjs"
+    "test:ui-language": "node scripts/ui-language-acceptance.mjs",
+    "test:ui-dashboard": "node scripts/ui-dashboard-acceptance.mjs"
   },
   "keywords": [],
   "author": "",
