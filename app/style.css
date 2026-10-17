@@ -44,3 +44,5 @@ html[lang=en] body{font-family:Arial,'Noto Sans Arabic',sans-serif}
 .setupchecklist li{margin-bottom:16px}.setupchecklist button{margin-inline:8px}.helpbutton{font-size:12px;white-space:nowrap}@media(max-width:700px){.helpbutton{padding:6px;font-size:10px}.shell main>header{flex-wrap:nowrap}}
 @media(max-width:700px){.datatable td:not([data-label])::before{display:none}}
 .drawerbackdrop{display:none}@media(max-width:700px){.drawerbackdrop{display:block;position:fixed;inset:0;z-index:39;background:#102d3655;padding:0;border-radius:0}.shell.mobilenavopen>aside{box-shadow:none}}
+
+.navsection{min-width:0}.navsection summary{cursor:pointer;padding:10px 6px;font-weight:600;overflow-wrap:anywhere}.navsection[open]{padding-bottom:6px}.navsection button{width:100%;text-align:start}
