@@ -1,0 +1,25 @@
+'use client';
+import {useEffect,useState} from 'react';
+import {useLanguage} from './LanguageProvider';
+import {appointmentEnd,nextVisibleSlot} from '../../lib/booking-time';
+export default function BookingFields({api,form,setForm,patients,staff,rows,canCreatePatient,onSetup}){
+ const {t}=useLanguage(),[query,setQuery]=useState(''),[prices,setPrices]=useState([]),[error,setError]=useState(''),[loading,setLoading]=useState(true);
+ useEffect(()=>{let active=true;api('finance/service-prices').then(p=>{if(active){setPrices(p);setLoading(false)}}).catch(e=>{if(active){setError(e.message);setLoading(false)}});return()=>{active=false}},[api]);
+ const day=form.start?.slice(0,10)||new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Muscat'}).format(new Date());
+ const current=[...new Map([...prices].filter(p=>p.effective_date<=day).sort((a,b)=>a.effective_date.localeCompare(b.effective_date)).map(p=>[p.name,p])).values()];
+ const service=current.find(p=>p.name===form.service),duration=Number(service?.duration_minutes||0);
+ useEffect(()=>{if(!duration||!form.provider)return;let start=form.start;if(!start){start=new Date(Date.now()+4*3600000+60000).toISOString().slice(0,16);start=nextVisibleSlot(start,duration,form.provider,rows)}const end=appointmentEnd(start,duration);if(form.start!==start||form.end!==end)setForm(previous=>({...previous,start,end}));},[duration,form.provider,form.start,form.end,rows,setForm]);
+ const results=patients.filter(p=>[p.name,p.phone,String(p.id)].some(value=>String(value||'').toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))).slice(0,20);
+ const selected=patients.find(p=>String(p.id)===String(form.patient_id));
+ return <>
+ <div className="wide"><label>{t('ابحث عن المريض بالاسم أو الهاتف أو رقم الملف')}<input type="search" value={query} onChange={e=>setQuery(e.target.value)}/></label>{selected?<p role="status">{selected.name} · {selected.phone} <button type="button" className="secondary" onClick={()=>setForm({...form,patient_id:''})}>{t('تغيير المريض')}</button></p>:!form.patient&&<div className="patientmatches">{results.map(p=><button className="secondary" type="button" key={p.id} onClick={()=>setForm({...form,patient_id:p.id})}>{p.name} · {p.phone} · {p.id}</button>)}{!results.length&&<p>{t('لا يوجد ملف مطابق — راجع البحث أو سجل مريضًا جديدًا.')}</p>}{canCreatePatient&&<button type="button" onClick={()=>setForm({...form,patient_id:'',patient:{name:'',phone:'',birth:''}})}>{t('تسجيل مريض جديد هنا')}</button>}</div>}</div>
+ {form.patient&&<><label>{t('اسم المريض')}<input required maxLength={200} value={form.patient.name} onChange={e=>setForm({...form,patient:{...form.patient,name:e.target.value}})}/></label><label>{t('رقم الهاتف')}<input required type="tel" maxLength={50} value={form.patient.phone} onChange={e=>setForm({...form,patient:{...form.patient,phone:e.target.value}})}/></label><label>{t('تاريخ الميلاد')}<input type="date" value={form.patient.birth} onChange={e=>setForm({...form,patient:{...form.patient,birth:e.target.value}})}/></label><button type="button" className="secondary" onClick={()=>setForm({...form,patient:null})}>{t('العودة للبحث عن ملف')}</button></>}
+ <label>{t('الممارس')}<select aria-label={t('الممارس')} required value={form.provider||''} onChange={e=>setForm({...form,provider:e.target.value})}><option value="">{t('اختر')}</option>{staff.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select></label>
+ <label>{t('الخدمة والسعر الساري')}<select aria-label={t('الخدمة والسعر الساري')} required disabled={loading||!current.length} value={form.service||''} onChange={e=>setForm({...form,service:e.target.value})}><option value="">{t('اختر خدمة')}</option>{current.map(p=><option key={p.id} value={p.name}>{p.name}</option>)}</select></label>
+ {error&&<p className="error wide" role="alert">{error}</p>}{!loading&&!current.length&&<div className="wide" role="status"><p>{t('لا توجد خدمات بأسعار سارية. اطلب من المالك إعدادها قبل الحجز.')}</p>{onSetup&&<button type="button" className="secondary" onClick={onSetup}>{t('إعداد الخدمات والأسعار')}</button>}</div>}
+ <label>{t('البداية')}<input required type="datetime-local" value={form.start||''} onChange={e=>setForm({...form,start:e.target.value})}/></label>
+ {duration?<p className="hint">{t('النهاية حسب مدة الخدمة المعتمدة')}: <bdi>{form.end}</bdi></p>:<label>{t('النهاية')}<input aria-label={t('النهاية')} required type="datetime-local" value={form.end||''} onChange={e=>setForm({...form,end:e.target.value})}/><small>{t('لم يعتمد المالك مدة هذه الخدمة بعد؛ حدد نهاية الموعد.')}</small></label>}
+ <details className="wide"><summary>{t('خيارات إضافية')}</summary><div className="formgrid"><label>{t('الغرفة')}<input value={form.room||''} onChange={e=>setForm({...form,room:e.target.value})}/></label><label>{t('رقم الباقة (اختياري)')}<input type="number" value={form.package_id||''} onChange={e=>setForm({...form,package_id:e.target.value})}/></label></div></details>
+ <p className="hint wide">{t('الأوقات بتوقيت عمان؛ راجع ساعات العمل قبل الحفظ. الحفظ ينشئ الملف والموعد معًا أو لا يحفظ أيًا منهما.')}</p>
+ </>;
+}
