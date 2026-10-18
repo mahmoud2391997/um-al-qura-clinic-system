@@ -8,7 +8,7 @@ const output=resolve(process.env.CLINIC_UI_ARTIFACTS||'.local/usability-baseline
 const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'}),results=[];
 try{
  for(const width of [1366,390])for(const role of ['owner','reception','finance','physio']){
-  const context=await browser.newContext({viewport:{width,height:900}});
+  const context=await browser.newContext({viewport:{width,height:width===390?844:850}});
   const login=await context.request.post(base+'/api/demo',{headers:{Origin:base},data:{role}});if(!login.ok())throw Error('Demo fixture login failed');
   const page=await context.newPage();page.setDefaultTimeout(15000);await page.goto(base);await expect(page.locator('.dashboardmetrics')).toBeVisible();
   const geometry=await page.locator('.dashboard').evaluate(el=>({firstContentTop:Math.round(el.getBoundingClientRect().top),pageWidth:document.documentElement.scrollWidth,viewport:innerWidth}));

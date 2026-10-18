@@ -1,0 +1,2 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {bookingDateLabel} from '../lib/ui-date.js';
+test('booking captions preserve Oman wall time and localize the date',()=>{assert.match(bookingDateLabel('2099-01-05T09:30','en'),/5 January 2099.*09:30/);assert.match(bookingDateLabel('2099-01-05T09:30'),/يناير/);assert.equal(bookingDateLabel(''), '');assert.equal(bookingDateLabel('not-a-date'),'');});
