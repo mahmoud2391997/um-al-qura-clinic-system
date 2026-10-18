@@ -80,3 +80,10 @@ test('demo session rehydrates after instance loss without accessing real session
   assert.equal(await restoreDemoSession('arbitrary.123.bad'), false);
   assert.equal(await db.prepare('SELECT token FROM sessions WHERE token=?').get(token), undefined);
 });
+
+
+test('demo catalog has clearly synthetic bookable services with prices and durations',async()=>{
+ const rows=await demoDatabase.prepare('SELECT c.name,p.amount,p.floor,b.duration_minutes FROM service_catalog c JOIN service_prices p ON p.service_id=c.id JOIN service_booking_policy b ON b.service_id=c.id').all();
+ assert.ok(rows.length>=2);
+ for(const row of rows){assert.match(row.name,/تجريبية/);assert.ok(row.amount>=row.floor);assert.ok(row.duration_minutes>0)}
+});
