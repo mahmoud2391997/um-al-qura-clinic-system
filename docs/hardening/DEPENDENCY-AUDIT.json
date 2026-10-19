@@ -11,11 +11,11 @@
     },
     "dependencies": {
       "prod": 50,
-      "dev": 3,
+      "dev": 80,
       "optional": 40,
       "peer": 0,
       "peerOptional": 0,
-      "total": 92
+      "total": 169
     }
   },
   "vulnerabilities": {}

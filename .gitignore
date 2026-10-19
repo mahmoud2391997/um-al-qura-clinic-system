@@ -11,3 +11,6 @@ data/
 # Encrypted clinic backups
 *.uqb
 backups/
+
+# Safe configuration template only; real environment files remain ignored.
+!.env.example

@@ -1,5 +1,8 @@
 # نظام مجمع أم القرى
 
+Current development status: [development checklist](docs/DEVELOPMENT-CHECKLIST.md).
+
+
 تطبيق عربي بـ Next.js وReact وSQLite، على Node.js 22. المستودع الشخصي: https://github.com/mahmoud2391997/um-al-qura-clinic-system
 
 ## التشغيل المحلي
@@ -80,3 +83,31 @@ CLINIC_ACCEPTANCE_REAL=1 CLINIC_ACCEPTANCE_BASE=http://127.0.0.1:3034 npm run te
 ```
 
 عمليات PostgreSQL تنفذ داخل معاملة واتصال واحد لكل طلب. قفل على مستوى المجمع يمنع تضارب الاعتمادات والأرصدة بين نسخ السيرفر؛ يحد ذلك من التوازي، ويمكن استبداله بأقفال على السجلات بعد قياس الأحمال. أدوات النسخ المشفر الحالية خاصة بـSQLite؛ يلزم إعداد النسخ والاستعادة الخاصة بـPostgreSQL قبل التشغيل الفعلي.
+
+## English — development and operations
+
+Use Node.js 22, `npm ci`, then `npm run dev` and open http://127.0.0.1:3000. Local SQLite data lives in `data/clinic.sqlite`; demo data is separate and synthetic. On an empty installation, the owner creates the first account. There is no default password. `.env.example` lists application/test settings without credentials; copy only the settings needed for the chosen environment into a private, ignored file. A real environment requires PostgreSQL and the checks in `scripts/check-env.mjs`.
+
+Architecture: Next.js 16 App Router + React 19, with an Arabic-first interface and core English support. The catch-all API delegates to `lib/api-handlers`; domain services use the SQLite/PostgreSQL adapters. `lib/endpoint-policy.js` is the explicit method/path registry, re-exported by `lib/api-audit-policy.js`. New routes must be classified and pass the inventory and HTTP denial matrix. `docs/DEVELOPMENT-CHECKLIST.md` records requirements reconciliation; `docs/hardening/` contains task-specific evidence and limitations.
+
+Validation commands:
+
+```sh
+npm test
+# Disposable loopback PostgreSQL only; never use production credentials:
+CLINIC_TEST_POSTGRES=1 DATABASE_URL='<disposable local test URL>' npm test
+CLINIC_SECURITY_ACCEPTANCE=1 npm run test:audit
+npm run lint
+npm run format:check
+npm run build
+npm run test:backup-postgres
+npm run test:ui-matrix
+```
+
+Formatting/lint coverage is intentionally scoped to the new hardening files in `quality-files.json`; this does not certify the legacy UI/source. After a reviewed router change, update its source fingerprint with `node scripts/update-router-fingerprint.mjs`, then rerun inventory and HTTP acceptance. Do not update a fingerprint merely to bypass an unexplained test failure.
+
+Security model: server-side role grants and patient/practitioner scopes remain authoritative. Cookie mutations require same-origin requests; scheduler endpoints require a separate secret. Production cookies are Secure, HttpOnly and SameSite=Strict. Account and authenticated-proxy-IP throttles resist repeated failures; configure matching `CLINIC_TRUSTED_PROXY_TOKEN` values in the private clinic/gateway settings. Unauthenticated forwarding headers are ignored. API errors reflect only a static public vocabulary. The audit writer hashes each link; a database administrator can still replace the history, so independent anchoring is required for stronger assurance.
+
+Attachments remain quarantined until clean scanning and a matching content digest are recorded. Configure a local `CLINIC_CLAMAV_SOCKET` and rescan with `node scripts/scan-attachments.mjs`; scanner/storage providers are not enabled automatically. Owner-created invitations require `CLINIC_INVITATION_TTL_MINUTES`. Staff capacity uses explicit owner-entered work/time-off intervals; there are no default working hours. Outbox delivery requires an operator-controlled transport module plus all retry settings; unknown delivery outcomes are held for reconciliation.
+
+Production backup/restore uses PostgreSQL through `infra/backup.sh` and `infra/restore-drill.sh`; the SQLite tool is legacy/development. The synthetic automated drill uses isolated containers and temporary keys. Offsite destination, retention, schedules, TLS, clinic policies and user acceptance require separate configuration and verification. `sh infra/check-copies.sh` checks copied infrastructure content before release; drift is an error, not silently synchronized across unrelated repositories.

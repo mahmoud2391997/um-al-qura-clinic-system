@@ -17,7 +17,13 @@
     "test:security": "CLINIC_SECURITY_ACCEPTANCE=1 node scripts/local-mail-acceptance.mjs",
     "guides": "node scripts/generate-role-guides.mjs",
     "test:ui-language": "node scripts/ui-language-acceptance.mjs",
-    "test:ui-dashboard": "node scripts/ui-dashboard-acceptance.mjs"
+    "test:ui-dashboard": "node scripts/ui-dashboard-acceptance.mjs",
+    "lint": "node scripts/check-lint.mjs",
+    "format:check": "node scripts/check-quality.mjs",
+    "format:new": "node scripts/check-quality.mjs --write",
+    "audit:verify": "node scripts/verify-audit.mjs",
+    "test:backup-postgres": "node scripts/postgres-backup-drill.mjs",
+    "test:ui-matrix": "node scripts/ui-hardening-matrix.mjs"
   },
   "keywords": [],
   "author": "",
@@ -39,6 +45,9 @@
     "@playwright/test": "^1.64.1",
     "acorn": "^8.19.0",
     "axe-core": "^4.14.0",
-    "nodemailer": "^10.1.1"
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0",
+    "nodemailer": "^10.1.1",
+    "prettier": "^3.9.10"
   }
 }
