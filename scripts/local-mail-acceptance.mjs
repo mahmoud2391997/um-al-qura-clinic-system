@@ -44,12 +44,12 @@ try{
  db.prepare('INSERT INTO users(id,name,email,password,role) VALUES(?,?,?,?,?)').run('acceptance-owner','Synthetic Owner','owner@example.test',hashPassword(password),'owner');
  db.prepare('INSERT INTO users(id,name,email,password,role) VALUES(?,?,?,?,?)').run('acceptance-physio','Synthetic Provider','physio@example.test',hashPassword(password),'physio');
  db.prepare("INSERT INTO patients(id,name,phone,creator) VALUES(1,'VISIBLE_SYNTHETIC','TEST','acceptance-physio'),(2,'PRIVATE_SYNTHETIC','TEST','acceptance-owner')").run();
- app=spawn(process.execPath,['node_modules/next/dist/bin/next','dev','--hostname','127.0.0.1','--port',String(port)],{cwd:resolve('.'),env:{...process.env,NODE_ENV:'development',DATABASE_URL:'',VERCEL:'',CLINIC_DB:filename,CLINIC_DEMO_ONLY:'0',CLINIC_EMAIL_ENDPOINT:'https://localhost:'+adapter.address().port+'/send',CLINIC_EMAIL_KEY:key,CLINIC_BASE_URL:'https://localhost:'+port,NODE_EXTRA_CA_CERTS:join(directory,'cert.pem')}});
+ app=spawn(process.execPath,['node_modules/next/dist/bin/next','dev','--hostname','127.0.0.1','--port',String(port)],{cwd:resolve('.'),env:{...process.env,NODE_ENV:'development',DATABASE_URL:'',VERCEL:'',CLINIC_DB:filename,CLINIC_DEMO_ONLY:'0',CLINIC_EMAIL_ENDPOINT:'https://localhost:'+adapter.address().port+'/send',CLINIC_EMAIL_KEY:key,CLINIC_BASE_URL:'https://localhost:'+port,CLINIC_INVITATION_TTL_MINUTES:'5',CLINIC_TRUSTED_PROXY_TOKEN:key,NODE_EXTRA_CA_CERTS:join(directory,'cert.pem')}});
  app.stdout.on('data',x=>logs=(logs+x).slice(-12000));app.stderr.on('data',x=>logs=(logs+x).slice(-12000));
  let ready=false;for(let i=0;i<120;i++){try{const r=await fetch(base+'/api/setup');if(r.ok){ready=true;break}}catch{}await delay(500)}assert(ready,'Local application did not become ready');
- const call=async(path,body,cookie)=>{const r=await fetch(base+'/api/'+path,{method:body?'POST':'GET',headers:{origin:base,...(body?{'content-type':'application/json'}:{}),...(cookie?{cookie}:{})},...(body?{body:JSON.stringify(body)}:{})});const text=await r.text();let value;try{value=JSON.parse(text)}catch{throw Error('Expected JSON at '+path+' (HTTP '+r.status+', '+(r.headers.get('content-type')||'no content type')+')')}return {status:r.status,value,cookieOptions:r.headers.getSetCookie().find(x=>x.startsWith('clinic_session=')),cookie:r.headers.getSetCookie().find(x=>x.startsWith('clinic_session='))?.split(';')[0]}};
+ const call=async(path,body,cookie,requestHeaders={})=>{const r=await fetch(base+'/api/'+path,{method:body?'POST':'GET',headers:{origin:base,'x-clinic-proxy-token':key,'x-clinic-client-ip':'127.0.0.1',...requestHeaders,...(body?{'content-type':'application/json'}:{}),...(cookie?{cookie}:{})},...(body?{body:JSON.stringify(body)}:{})});const text=await r.text();let value;try{value=JSON.parse(text)}catch{throw Error('Expected JSON at '+path+' (HTTP '+r.status+', '+(r.headers.get('content-type')||'no content type')+')')}return {status:r.status,value,cookieOptions:r.headers.getSetCookie().find(x=>x.startsWith('clinic_session=')),cookie:r.headers.getSetCookie().find(x=>x.startsWith('clinic_session='))?.split(';')[0]}};
  if(process.env.CLINIC_AUDIT_MATRIX==='1')await verifyEndpointDenials({call,db});
- if(process.env.CLINIC_SECURITY_ACCEPTANCE==='1')await verifySecurityBoundary({base,call});
+ if(process.env.CLINIC_SECURITY_ACCEPTANCE==='1')await verifySecurityBoundary({base,call,proxyHeaders:{'x-clinic-proxy-token':key,'x-clinic-client-ip':'192.0.2.111'}});
  const old=await call('login',{email:'owner@example.test',password});assert.equal(old.status,200);assert(old.cookie);assert(old.cookieOptions.includes('HttpOnly'));assert(old.cookieOptions.includes('SameSite=strict'));assert(old.cookieOptions.includes('Path=/'));assert(old.cookieOptions.includes('Max-Age=28800'));assert(!old.cookieOptions.includes('Secure'),'Loopback development cookie is intentionally HTTP; production uses Secure in source');
  assert.equal((await call('password/request-reset',{email:'owner@example.test'})).status,200);assert.equal(messages.length,1);
  // Decode MIME quoted-printable wrapping before extracting the reset URL; never log it.
@@ -62,6 +62,17 @@ try{
  assert.equal((await call('login',{email:'owner@example.test',password})).status,401);
  const owner=await call('login',{email:'owner@example.test',password:newPassword});assert.equal(owner.status,200);
  assert.equal((await call('password/reset',{token,password:newPassword})).status,400);
+ const invited=await call('users/invitations',{name:'Synthetic invitee',email:'invitee@example.test',role:'reception'},owner.cookie);assert.equal(invited.status,200);assert.equal(messages.length,2);
+ const mimeToken=(message,kind)=>{const [head,...parts]=message.split('\r\n\r\n');const raw=parts.join('\r\n\r\n');const decoded=/Content-Transfer-Encoding: base64/i.test(head)?Buffer.from(raw.replace(/\s/g,''),'base64').toString('utf8'):raw.replace(/=\r\n/g,'').replace(/=([A-F0-9]{2})/g,(_,x)=>String.fromCharCode(parseInt(x,16)));return decoded.match(new RegExp('#'+kind+'=([a-f0-9]{64})'))?.[1]};
+ const inviteToken=mimeToken(messages[1],'invite');assert(inviteToken);
+ assert.equal((await call('password/accept-invitation',{token:inviteToken,password:newPassword})).status,200);
+ assert.equal((await call('login',{email:'invitee@example.test',password:newPassword})).status,200);
+ assert.equal((await call('password/accept-invitation',{token:inviteToken,password:newPassword})).status,400);
+ assert.equal((await call('users/invitations',{name:'Synthetic expired invite',email:'expired@example.test',role:'reception'},owner.cookie)).status,200);
+ const expiredToken=mimeToken(messages[2],'invite');assert(expiredToken);db.prepare('UPDATE account_invitations SET expires=0').run();
+ assert.equal((await call('password/accept-invitation',{token:expiredToken,password:newPassword})).status,400);
+ const sentBefore=messages.length;assert.equal((await call('password/request-reset',{email:'unknown@example.test'})).status,200);assert.equal(messages.length,sentBefore);
+ console.log('PASS: invitation -> local SMTP catcher -> single-use activation -> login; expired/reused invitation denied; unknown reset request does not enumerate accounts.');
  const clinician=await call('login',{email:'physio@example.test',password});assert.equal(clinician.status,200);
  const patients=await call('patients',null,clinician.cookie);assert.equal(patients.status,200);assert.deepEqual(patients.value.map(x=>x.id),[1]);
  assert.equal((await call('patients/profile/2',null,clinician.cookie)).status,403);
