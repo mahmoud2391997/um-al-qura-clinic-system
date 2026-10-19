@@ -1,3 +1,4 @@
+import {findEndpoint,endpointAllowed} from '../../../lib/api-audit-policy.js';
 import {quickBook} from '../../../lib/quick-booking.js';
 import {dashboardSummary} from '../../../lib/dashboard.js';
 import {listIncidents,saveIncident,incidentPermission} from '../../../lib/quality-incidents.js';
@@ -46,6 +47,8 @@ async function handle(req, {
   try {
     const path = (await params).path.join('/');
     const method = req.method;
+    const endpoint = findEndpoint(method, path);
+    if (!endpoint) return response({error:'غير متاح'},404);
     if (path === 'automation/run') {
       const authorization = req.headers.get('authorization'),
         secret = process.env.CLINIC_AUTOMATION_SECRET;
@@ -206,11 +209,17 @@ async function handle(req, {
         await audit(user.id, 'data.read.success', path, null, {...metadata, count: Array.isArray(payload) ? payload.length : 1});
       } else if (method === 'POST' && body.action === 'download') {
         await audit(user.id, status < 400 ? 'data.download.success' : 'data.download.denied', path, null, {...metadata, count: status < 400 ? 1 : 0});
+      } else if (status === 403 && method === 'POST' && path !== 'reports/export') {
+        await audit(user.id,'data.write.denied',path,null,metadata);
       } else if (status === 403 && (method === 'GET' || path === 'reports/export')) {
         await audit(user.id, path === 'reports/export' ? 'data.export.denied' : 'data.read.denied', path, null, metadata);
       }
+      if (method === 'POST' && status < 400 && body.action !== 'download' && path !== 'reports/export') {
+        await audit(user.id,'data.write.success',path,null,{...metadata,method});
+      }
       return response(payload, status);
     };
+    if (!endpointAllowed(endpoint,{...user,permissions},body)) return auditedResponse({error:'غير مصرح'},403);
     const readinessActor={...user,permissions};
     if(path==='appointments/book'){if(method!=='POST')return auditedResponse({error:'غير متاح'},405);try{return auditedResponse(await quickBook(db,body,{...user,permissions}));}catch(e){return auditedResponse({error:e.message},e.status||400);}}
     const readinessRoutes=['finance/service-prices','finance/below-cost','inventory/adjustment-policy','inventory/adjustment-requests','equipment/parts-issue','marketing/visits','reports/filtered'];

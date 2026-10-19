@@ -1,3 +1,4 @@
+import {verifyEndpointDenials} from './lib/endpoint-denials.mjs';
 import {verifyIncidents} from './lib/incidents-acceptance.mjs';
 import {verifyAssets} from './lib/assets-acceptance.mjs';
 // Synthetic, loopback-only acceptance: HTTPS adapter -> SMTP catcher -> actual clinic routes.
@@ -47,6 +48,7 @@ try{
  app.stdout.on('data',x=>logs=(logs+x).slice(-12000));app.stderr.on('data',x=>logs=(logs+x).slice(-12000));
  let ready=false;for(let i=0;i<120;i++){try{const r=await fetch(base+'/api/setup');if(r.ok){ready=true;break}}catch{}await delay(500)}assert(ready,'Local application did not become ready');
  const call=async(path,body,cookie)=>{const r=await fetch(base+'/api/'+path,{method:body?'POST':'GET',headers:{origin:base,...(body?{'content-type':'application/json'}:{}),...(cookie?{cookie}:{})},...(body?{body:JSON.stringify(body)}:{})});const text=await r.text();let value;try{value=JSON.parse(text)}catch{throw Error('Expected JSON at '+path+' (HTTP '+r.status+', '+(r.headers.get('content-type')||'no content type')+')')}return {status:r.status,value,cookieOptions:r.headers.getSetCookie().find(x=>x.startsWith('clinic_session=')),cookie:r.headers.getSetCookie().find(x=>x.startsWith('clinic_session='))?.split(';')[0]}};
+ if(process.env.CLINIC_AUDIT_MATRIX==='1')await verifyEndpointDenials({call,db});
  if(process.env.CLINIC_SECURITY_ACCEPTANCE==='1')await verifySecurityBoundary({base,call});
  const old=await call('login',{email:'owner@example.test',password});assert.equal(old.status,200);assert(old.cookie);assert(old.cookieOptions.includes('HttpOnly'));assert(old.cookieOptions.includes('SameSite=strict'));assert(old.cookieOptions.includes('Path=/'));assert(old.cookieOptions.includes('Max-Age=28800'));assert(!old.cookieOptions.includes('Secure'),'Loopback development cookie is intentionally HTTP; production uses Secure in source');
  assert.equal((await call('password/request-reset',{email:'owner@example.test'})).status,200);assert.equal(messages.length,1);
