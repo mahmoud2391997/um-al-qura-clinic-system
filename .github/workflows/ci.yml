@@ -44,5 +44,8 @@ jobs:
           CLINIC_TEST_POSTGRES: '1'
           DATABASE_URL: postgresql://clinic:disposable-ci-only@127.0.0.1:5432/clinic_test
       - run: CLINIC_SECURITY_ACCEPTANCE=1 npm run test:audit
+      - run: npm run test:concurrency-http
+        env:
+          DATABASE_URL: postgresql://clinic:disposable-ci-only@127.0.0.1:5432/clinic_test
       - run: shellcheck -s sh infra/*.sh infra/postgres/*.sh
       - run: npm run build

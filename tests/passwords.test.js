@@ -17,3 +17,5 @@ test('database seeds every agreed role without users or default password', async
   assert.equal((await db.prepare('SELECT count(*) n FROM roles').get()).n, 13);
   assert.equal((await db.prepare('SELECT count(*) n FROM users').get()).n, 0);
 });
+
+test('disabled and malformed password hashes fail closed without throwing',()=>{for(const hash of [null,undefined,'disabled','salt:invalid','a'.repeat(32)+':'+'0'.repeat(126)])assert.equal(verifyPassword('synthetic-password',hash),false);});

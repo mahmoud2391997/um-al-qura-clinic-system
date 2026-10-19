@@ -1,3 +1,4 @@
+import {rowConcurrentRoute} from '../../../lib/row-locks.js';
 import {endpointAllowed} from '../../../lib/api-audit-policy.js';
 import {checkProductionEnvironment} from '../../../scripts/check-env.mjs';
 import {postgresConfigured,withPostgres} from '../../../lib/postgres.js';
@@ -66,7 +67,7 @@ async function dispatch(req,context){
  checkProductionEnvironment();
  if(path==='environment')return response({demoAvailable:demoEnabled(),persistent:postgresConfigured(),demoOnly:process.env.CLINIC_DEMO_ONLY==='1'});
  if(postgresConfigured()&&!demoRequest&&process.env.CLINIC_DEMO_ONLY!=='1'){
-  try{return await withPostgres(database=>handle(req,context,database));}catch(e){console.error('Database request failed',e.code||e.name);return response({error:'تعذر الاتصال بقاعدة البيانات؛ حاول لاحقًا'},503);}
+  try{return await withPostgres(database=>handle(req,context,database),{concurrent:rowConcurrentRoute(req.method,path)});}catch(e){console.error('Database request failed',e.code||e.name);return response({error:'تعذر الاتصال بقاعدة البيانات؛ حاول لاحقًا'},503);}
  }
  const previous=sqliteQueue;let release;sqliteQueue=new Promise(resolve=>release=resolve);await previous;
  try{return await handle(req,context,localDb);}finally{release();}

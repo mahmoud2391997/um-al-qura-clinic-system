@@ -30,13 +30,13 @@ const smtp=tcpServer(socket=>{
  if(/^(EHLO|HELO)/i.test(line))socket.write('250 localhost\r\n');else if(/^DATA/i.test(line)){data=true;socket.write('354 end with dot\r\n')}else if(/^QUIT/i.test(line))socket.end('221 bye\r\n');else socket.write('250 ok\r\n');}});
 });
 const listen=server=>new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
-let adapter;
+let adapter;let rejectMail=false;
 try{
  execFileSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',join(directory,'key.pem'),'-out',join(directory,'cert.pem'),'-days','1','-subj','/CN=localhost','-addext','subjectAltName=DNS:localhost,IP:127.0.0.1'],{stdio:'ignore'});
  await listen(smtp);
  const transport=nodemailer.createTransport({host:'127.0.0.1',port:smtp.address().port,secure:false,ignoreTLS:true});
  const key=randomBytes(32).toString('hex');
- adapter=httpsServer({key:readFileSync(join(directory,'key.pem')),cert:readFileSync(join(directory,'cert.pem'))},mailHandler({key,send:message=>transport.sendMail({from:'synthetic@example.test',...message})}));await listen(adapter);
+ adapter=httpsServer({key:readFileSync(join(directory,'key.pem')),cert:readFileSync(join(directory,'cert.pem'))},mailHandler({key,send:message=>{if(rejectMail)throw Error('Synthetic delivery failure');return transport.sendMail({from:'synthetic@example.test',...message})}}));await listen(adapter);
  // Reserve a fresh application port, then release it immediately before startup.
  const reservation=tcpServer();await listen(reservation);const port=reservation.address().port;await new Promise(r=>reservation.close(r));
  const base='http://127.0.0.1:'+port;const filename=join(directory,'clinic.sqlite');const db=createDatabase(filename);
@@ -60,7 +60,7 @@ try{
  assert.equal((await call('password/reset',{token,password:newPassword})).status,200);
  assert.equal((await call('me',null,old.cookie)).status,401);
  assert.equal((await call('login',{email:'owner@example.test',password})).status,401);
- const owner=await call('login',{email:'owner@example.test',password:newPassword});assert.equal(owner.status,200);
+ const owner=await call('login',{email:'owner@example.test',password:newPassword});assert.equal(owner.status,200);assert(db.prepare("SELECT COUNT(*) n FROM audit WHERE action='auth.login.success'").get().n>=2);assert(db.prepare("SELECT COUNT(*) n FROM audit WHERE action='auth.recovery.request'").get().n>=1);
  assert.equal((await call('password/reset',{token,password:newPassword})).status,400);
  const invited=await call('users/invitations',{name:'Synthetic invitee',email:'invitee@example.test',role:'reception'},owner.cookie);assert.equal(invited.status,200);assert.equal(messages.length,2);
  const mimeToken=(message,kind)=>{const [head,...parts]=message.split('\r\n\r\n');const raw=parts.join('\r\n\r\n');const decoded=/Content-Transfer-Encoding: base64/i.test(head)?Buffer.from(raw.replace(/\s/g,''),'base64').toString('utf8'):raw.replace(/=\r\n/g,'').replace(/=([A-F0-9]{2})/g,(_,x)=>String.fromCharCode(parseInt(x,16)));return decoded.match(new RegExp('#'+kind+'=([a-f0-9]{64})'))?.[1]};
@@ -72,6 +72,7 @@ try{
  const expiredToken=mimeToken(messages[2],'invite');assert(expiredToken);db.prepare('UPDATE account_invitations SET expires=0').run();
  assert.equal((await call('password/accept-invitation',{token:expiredToken,password:newPassword})).status,400);
  const sentBefore=messages.length;assert.equal((await call('password/request-reset',{email:'unknown@example.test'})).status,200);assert.equal(messages.length,sentBefore);
+ rejectMail=true;assert.equal((await call('password/request-reset',{email:'owner@example.test'})).status,200);assert.equal((await call('password/request-reset',{email:'another-unknown@example.test'})).status,200);rejectMail=false;
  console.log('PASS: invitation -> local SMTP catcher -> single-use activation -> login; expired/reused invitation denied; unknown reset request does not enumerate accounts.');
  const clinician=await call('login',{email:'physio@example.test',password});assert.equal(clinician.status,200);
  const patients=await call('patients',null,clinician.cookie);assert.equal(patients.status,200);assert.deepEqual(patients.value.map(x=>x.id),[1]);
