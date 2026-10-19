@@ -1,3 +1,4 @@
+import {setAttachmentScanner} from '../lib/attachment-storage.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createDatabase } from '../lib/db.js';
@@ -18,6 +19,7 @@ const store = {
   };
 async function setup() {
   const db = createDatabase(':memory:');
+  setAttachmentScanner(db,async()=> 'Clean');
   await db.exec("INSERT INTO users(id,name,email,password,role) VALUES('store','Store','s@invalid','disabled','store'),('owner','Owner','o@invalid','disabled','owner'),('reviewer','Reviewer','r@invalid','disabled','manager');INSERT INTO inventory(id,name,sku) VALUES(1,'Item','SKU')");
   const request = (await savePurchasing(db, 'purchasing/requests', {
     title: 'Demo',

@@ -1,3 +1,4 @@
+import {setAttachmentScanner,scanAttachment} from '../../lib/attachment-storage.js';
 import assert from 'node:assert/strict';
 import {auditedReadPaths,auditedDownloadPaths} from '../../lib/api-audit-policy.js';
 export async function verifyAuditMatrix({call,db,cookie}){
@@ -19,11 +20,13 @@ export async function verifyAuditMatrix({call,db,cookie}){
  db.prepare("INSERT INTO equipment(id,name) VALUES(1,'Synthetic device')").run();
  db.prepare("INSERT INTO maintenance(id,equipment_id,description) VALUES(1,1,'Synthetic maintenance')").run();
  db.prepare("INSERT INTO purchase_requests(id,title,creator,items) VALUES(1,'Synthetic purchasing',?,'[]')").run(actor);
+ setAttachmentScanner(db,async()=> 'Clean');
  let downloads=0;
  for(const path of auditedDownloadPaths){
   const purchasing=path==='purchasing/attachments';let id;
   if(purchasing)id=db.prepare("INSERT INTO purchase_attachments(request_id,name,mime,size,data,actor) VALUES(1,'fixture.pdf','application/pdf',30,?,?)").run(payload,actor).lastInsertRowid;
   else id=db.prepare("INSERT INTO documents(path,target_id,name,mime,size,data,actor) VALUES(?,1,'fixture.pdf','application/pdf',30,?,?)").run(path,payload,actor).lastInsertRowid;
+  await scanAttachment(db,purchasing?'purchase_attachments':'documents',id,Buffer.from(payload,'base64'));
   const before=last(),result=await call(path,{action:'download',id},cookie);assert.equal(result.status,200,'Download '+path);assert.equal(result.value.file.data,payload);
   const events=db.prepare("SELECT after_value FROM audit WHERE id>? AND action='data.download.success' AND entity=?").all(before,path);assert.equal(events.length,1,'Download '+path+' audited');const metadata=JSON.parse(events[0].after_value);assert.equal(metadata.role,'owner');assert(metadata.scopes);assert(!events[0].after_value.includes(payload));downloads++;
  }

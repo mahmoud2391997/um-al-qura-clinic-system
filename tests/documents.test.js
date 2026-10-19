@@ -1,9 +1,11 @@
+import {setAttachmentScanner} from '../lib/attachment-storage.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createDatabase } from '../lib/db.js';
 import { saveDocument, listDocuments } from '../lib/documents.js';
 test('clinical attachments enforce owning clinician scope on listing upload and download', async () => {
   const db = createDatabase(':memory:');
+  setAttachmentScanner(db,async()=> 'Clean');
   await db.exec("INSERT INTO users(id,name,email,password,role) VALUES('p','Demo','p@invalid','disabled','physio'),('q','Demo','q@invalid','disabled','physio');INSERT INTO patients(id,name,phone) VALUES(1,'Demo','DEMO');INSERT INTO clinical(patient_id,provider,kind,episode,content) VALUES(1,'p','Assessment','Demo','Demo')");
   const p = {
       id: 'p',
