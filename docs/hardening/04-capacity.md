@@ -1,0 +1,6 @@
+Task 4: staff capacity and utilization
+- Added owner-only dated working-hours and time-off entities and settings at users/working-hours and users/time-off. No working hours or leave allowance is selected by the application. Inputs use Oman wall time; overlapping working/leave intervals are unioned and clipped to the selected date range.
+- reports/capacity shows booked/capacity and completed/capacity alongside completed/booked, with explicit labels. Missing period/configuration and zero capacity do not invent percentages. Appointments outside hours remain visible in the numerator, so overbooking can exceed 100%. Reports require reports.view + appointments.view and honor assigned practitioner scope.
+- Settings/report screens are reachable through the existing readiness workspace. Settings API supports audited update/removal by ID; the current simple UI creates intervals (advanced editing/removal is API-only).
+- Verified: 149/149 dual-database tests, including overlapping work/leave, overnight Oman clipping, reconciliation, missing/zero capacity, scope, owner denial, invalid update rollback and removal. Existing appointment utilization definition is unchanged.
+- Not verified: clinic approval of numerator/denominator policy, real staff schedules, recurring-roster UI, physical-device or production acceptance. These are dated intervals, not a recurrence engine.
