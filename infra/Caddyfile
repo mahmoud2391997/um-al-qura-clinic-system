@@ -21,7 +21,10 @@
   reverse_proxy mail-adapter:3000
  }
  handle {
-  reverse_proxy clinic:3000
+  reverse_proxy clinic:3000 {
+   header_up X-Clinic-Client-IP {remote_host}
+   header_up X-Clinic-Proxy-Token {$CLINIC_TRUSTED_PROXY_TOKEN}
+  }
  }
 }
 {$EMPLOYEES_DOMAIN} {

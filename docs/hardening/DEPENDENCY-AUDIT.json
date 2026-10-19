@@ -1,0 +1,22 @@
+{
+  "checkedAt": "2026-10-19",
+  "metadata": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 0
+    },
+    "dependencies": {
+      "prod": 50,
+      "dev": 3,
+      "optional": 40,
+      "peer": 0,
+      "peerOptional": 0,
+      "total": 92
+    }
+  },
+  "vulnerabilities": {}
+}
