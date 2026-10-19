@@ -1,3 +1,4 @@
+import {routerSource} from '../scripts/lib/router-source.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -8,7 +9,7 @@ import {extraPaths} from '../lib/purchasing-extras.js';
 import {documentPaths} from '../lib/documents.js';
 
 test('every dispatched path and module registry has an explicit method policy',()=>{
- const inventory=routeInventory(readFileSync(new URL('../app/api/[...path]/route.js',import.meta.url),'utf8'));
+ const inventory=routeInventory(routerSource());
  for(const path of [...inventory.paths,...Object.keys(operationPages),...extraPaths,...documentPaths.flatMap(p=>[p,p+'/targets'])]) {
   assert(endpointPolicy.some(e=>e.path===path),'Missing method policy: '+path);
  }

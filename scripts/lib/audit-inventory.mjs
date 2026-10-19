@@ -1,5 +1,9 @@
 import {parse} from 'acorn';
 export function routeInventory(source){
+ if(source.includes('// CLINIC_ROUTER_MODULE_BOUNDARY')){
+  const parts=source.split('// CLINIC_ROUTER_MODULE_BOUNDARY').map(routeInventory);
+  return {paths:[...new Set(parts.flatMap(p=>p.paths))].sort(),prefixes:[...new Set(parts.flatMap(p=>p.prefixes))].sort()};
+ }
  const tree=parse(source,{ecmaVersion:'latest',sourceType:'module'}),bindings=new Map(),paths=new Set(),prefixes=new Set();
  const walk=(node,visitor)=>{if(!node||typeof node!=='object')return;visitor(node);for(const [key,value]of Object.entries(node)){if(key==='start'||key==='end')continue;if(Array.isArray(value))for(const child of value)walk(child,visitor);else if(value&&typeof value==='object')walk(value,visitor)}};
  walk(tree,node=>{if(node.type==='VariableDeclarator'&&node.id.type==='Identifier')bindings.set(node.id.name,node.init)});

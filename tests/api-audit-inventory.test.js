@@ -1,9 +1,10 @@
+import {routerSource} from '../scripts/lib/router-source.mjs';
 import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {routeInventory} from '../scripts/lib/audit-inventory.mjs';
 import {auditExemptions,auditedReadPaths,auditedExportPaths,reviewedDispatchPrefixes,auditedDownloadPaths,reviewedRouteSourceSha256} from '../lib/api-audit-policy.js';
 import {operationPages} from '../lib/operations-config.js';import {extraPaths} from '../lib/purchasing-extras.js';import {documentPaths} from '../lib/documents.js';
-const source=readFileSync(new URL('../app/api/[...path]/route.js',import.meta.url),'utf8');
+const source=routerSource();
 function classify(source){const inventory=routeInventory(source);const reads=new Set(auditedReadPaths),classified=new Set([...reads,...auditedExportPaths,...Object.keys(auditExemptions)]);
  const paths=[...inventory.paths,...Object.keys(operationPages),...extraPaths,...documentPaths.flatMap(path=>[path,path+'/targets'])];
  for(const path of paths)assert(classified.has(path),'Unclassified API path: '+path);
