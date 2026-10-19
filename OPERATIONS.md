@@ -8,7 +8,13 @@
 
 لتصحيح قيد مالي، تُحدد حركة التحصيل أو المصروف أو سداد المورد والسبب. المالك يراجع طلبًا أنشأه موظف آخر. ينشأ قيد تعويضي في التاريخ الحالي؛ لا تُحذف الحركة الأصلية ولا يُفتح يوم الصندوق القديم. قيود سداد المورد ومصروفه تتعوض معًا. إذا تغير المصدر بعد الطلب أو لم يسمح رصيد الفاتورة أو كان يوم التصحيح النقدي مقفلًا، يُرفض التنفيذ دون أثر جزئي. هذه إلغاء كامل للقيد وليست تعديلًا جزئيًا أو ردًا ماليًا خارجيًا.
 
-## النسخ الاحتياطي المشفر المحلي
+## PostgreSQL backup and restore (primary production path)
+
+Production uses the shared PostgreSQL procedure in `infra/RUNBOOK.md`: owner-configured private settings, `sh infra/backup.sh`, then `sh infra/restore-drill.sh <encrypted archive>` in an isolated environment. The backup includes database dumps, per-table counts/content fingerprints and file checksums, with authenticated encryption. The restore drill compares those values in a separate PostgreSQL container. Configure retention/offsite destination and test restored application behavior before real use.
+
+Run `node scripts/postgres-backup-drill.mjs` for a self-contained synthetic-only rehearsal of those actual shell scripts. It creates a private temporary infra copy and isolated PostgreSQL 17 containers with no network or published ports, generates a temporary encryption key, verifies corrupt-archive rejection, restores the good archive and prints recovery time. It never reads operator settings or real databases. Requires Docker and cached PostgreSQL 17 images.
+
+## النسخ الاحتياطي المشفر المحلي (SQLite — legacy/development)
 
 الأداة تنتج لقطة SQLite متسقة مشفرة بـ AES-256-GCM، بملف صلاحياته 600. يلزم تعيين `CLINIC_BACKUP_KEY` بمفتاح عشوائي من 32 بايت، ممثلًا بـ64 حرف hexadecimal، وحفظه في مدير أسرار منفصل عن النسخ. فقد المفتاح يمنع الاستعادة. لا تحفظه في Git أو تشاركه في المحادثة.
 
@@ -80,4 +86,4 @@ CLINIC_ACCEPTANCE_BASE=http://127.0.0.1:3031 npm run test:acceptance
 
 اتصال دائم عبر `DATABASE_URL` على السيرفر؛ الأدوار والقوالب تتهيأ لأول مرة. الديمو يظل SQLite داخل الذاكرة معزولًا عن القاعدة الدائمة، ولا تُرحَّل بياناته. إنشاء المالك على Vercel محمي بـ`CLINIC_SETUP_TOKEN` (32 حرفًا على الأقل)؛ يُدخله المالك بنفسه ولا تحفظه في Git. لا يجوز استخدام حسابات الاختبار المحلية في الإنتاج.
 
-التنبيهات المجدولة تقبل PostgreSQL عند ضبط السر ووجود الاتصال الدائم، لكن خدمة الجدولة والبريد والدفع والرسائل لم تُفعّل. النسخ الحالية لملف SQLite لا تشمل PostgreSQL؛ فعِّل سياسة نسخ PostgreSQL واختبر الاستعادة على قاعدة منفصلة قبل التشغيل الطبي الفعلي. قائمة قبول الديمو لا تكفي لإعلان الجاهزية التشغيلية.
+التنبيهات المجدولة تقبل PostgreSQL عند ضبط السر ووجود الاتصال الدائم، لكن خدمة الجدولة والبريد والدفع والرسائل لم تُفعّل. أدوات SQLite خاصة بالتطوير؛ استخدم مسار PostgreSQL أعلاه، وفعل سياسة النسخ واختبر الاستعادة على قاعدة منفصلة قبل التشغيل الطبي الفعلي. قائمة قبول الديمو لا تكفي لإعلان الجاهزية التشغيلية.

@@ -13,7 +13,9 @@ writer_stop_started_ms=''
 cleanup(){
  restart_ok=true
  if [ -n "$running" ];then
-  sh ./control.sh start $running >/dev/null || restart_ok=false
+  if ! printf '%s\n' "$running" | while IFS= read -r service; do
+   sh ./control.sh start "$service" >/dev/null || exit 1
+  done; then restart_ok=false; fi
   if [ -n "$writer_stop_started_ms" ];then
    writer_restart_finished_ms=$(node -e 'process.stdout.write(String(Date.now()))')
    printf 'writer_stop_started_ms=%s writer_restart_finished_ms=%s writer_outage_ms=%s restart_ok=%s\n' "$writer_stop_started_ms" "$writer_restart_finished_ms" "$((writer_restart_finished_ms-writer_stop_started_ms))" "$restart_ok"
@@ -24,11 +26,13 @@ cleanup(){
 trap cleanup EXIT HUP INT TERM
 if [ -n "$running" ];then
  writer_stop_started_ms=$(node -e 'process.stdout.write(String(Date.now()))')
- sh ./control.sh stop $running
+ printf '%s\n' "$running" | while IFS= read -r service; do
+  sh ./control.sh stop "$service" || exit 1
+ done
 fi
 for db in factory clinic workforce;do
  sh ./control.sh exec -T postgres pg_dump -U postgres -d "$db" -Fc > "$snapshot/$db.dump"
- sh ./control.sh exec -T postgres psql -U postgres -d "$db" -At -c "SELECT format('SELECT %L, count(*) FROM %I.%I;',tablename,schemaname,tablename) FROM pg_tables WHERE schemaname='public' ORDER BY tablename" > "$snapshot/$db-count.sql"
+ sh ./control.sh exec -T postgres psql -U postgres -d "$db" -At < scripts/table-fingerprints.sql > "$snapshot/$db-count.sql"
  sh ./control.sh exec -T postgres psql -U postgres -d "$db" -At < "$snapshot/$db-count.sql" > "$snapshot/$db-count.txt"
 done
 sh ./control.sh cp factory:/app/data "$snapshot/factory-files"

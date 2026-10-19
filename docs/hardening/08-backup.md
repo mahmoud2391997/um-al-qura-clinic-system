@@ -1,0 +1,8 @@
+Task 8: PostgreSQL backup/restore rehearsal
+- Added a self-contained synthetic drill that invokes the actual backup.sh and restore-drill.sh through a private fixture control adapter, without reading operator settings, touching real services/databases, publishing ports or contacting providers.
+- Backup fingerprints now include per-table counts AND deterministic row-content hashes; authenticated encryption protects the archive. Database attachment content is covered by the row fingerprint; external synthetic file objects are checked by SHA-256. Restore uses PostgreSQL 17 by default (configurable image), matching the current dump major version.
+- OPERATIONS.md now names PostgreSQL as primary and SQLite backup as legacy/development.
+- Executed `node scripts/postgres-backup-drill.mjs`: three synthetic databases backed up, corrupted archive rejected, separate restored databases/content fingerprints/file checksums matched; recovery_seconds=3, snapshot_age_seconds=4, synthetic_drill_recovery_ms=3399. Temporary containers/config/key/archive removed. Initial fixture key encoding error was corrected to the existing encryption contract (base64url).
+- Not verified: live offsite hook, installed backup schedule, real-sized data/outage, restored app login/download under the new scan policy, production data or recovery objectives. Content fingerprinting adds a full read of table data and must be measured at operational volume. Infra copies must be reconciled before release.
+
+ShellCheck identified unsafe service-list splitting and archive selection; changed these to quoted per-service calls and Node-based latest archive selection. The restore wait-loop variable now explicitly marks itself unused.
