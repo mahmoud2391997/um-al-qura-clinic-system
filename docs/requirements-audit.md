@@ -1,4 +1,9 @@
+Current hardening evidence and limits: [handover summary](../HARDENING-SUMMARY.md).
+
 # مراجعة متطلبات مجمع أم القرى
+
+Current reconciled development status: [DEVELOPMENT-CHECKLIST.md](DEVELOPMENT-CHECKLIST.md). Older status and test counts below are historical.
+
 
 المرجع: Um_Al_Qura_Clinic_System_Master_Requirements_FINAL.pdf، الإصدار 1.0، 27 صفحة.
 تاريخ المراجعة: 14 أكتوبر 2026.

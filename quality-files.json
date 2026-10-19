@@ -30,8 +30,10 @@
   "scripts/lib/endpoint-denials.mjs",
   "scripts/lib/router-source.mjs",
   "scripts/postgres-backup-drill.mjs",
+  "scripts/postgres-concurrency-http.mjs",
   "scripts/run-outbox.mjs",
   "scripts/scan-attachments.mjs",
+  "scripts/ui-hardening-matrix.mjs",
   "scripts/update-router-fingerprint.mjs",
   "scripts/verify-audit.mjs",
   "tests/attachment-storage.test.js",
@@ -41,6 +43,7 @@
   "tests/invitations.test.js",
   "tests/outbox-worker.test.js",
   "tests/postgres-concurrency.test.js",
+  "tests/postgres-lock-mode.test.js",
   "tests/request-security.test.js",
   "tests/staff-capacity.test.js"
 ]
