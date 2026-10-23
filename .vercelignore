@@ -1,0 +1,9 @@
+.local/
+.next/
+node_modules/
+data/
+backups/
+.env*
+!.env.example
+*.uqb
+.DS_Store
