@@ -25,8 +25,10 @@ async function scan(database) {
   return counts;
 }
 try {
-  if (!process.env.CLINIC_CLAMAV_SOCKET)
-    throw Error('Configure CLINIC_CLAMAV_SOCKET before scanning');
+  if (!process.env.CLINIC_CLAMAV_SOCKET && !process.env.CLINIC_SCAN_ENDPOINT)
+    throw Error(
+      'Configure the local socket or HTTPS scan adapter before scanning',
+    );
   console.log(
     JSON.stringify(
       postgresConfigured() ? await withPostgres(scan) : await scan(db),

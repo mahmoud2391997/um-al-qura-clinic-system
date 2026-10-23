@@ -1,3 +1,5 @@
+import {verifyAttachmentScan} from './lib/attachment-scan-acceptance.mjs';
+import {verifyFinancialReport} from './lib/financial-report-acceptance.mjs';
 import {verifyEndpointDenials} from './lib/endpoint-denials.mjs';
 import {verifyIncidents} from './lib/incidents-acceptance.mjs';
 import {verifyAssets} from './lib/assets-acceptance.mjs';
@@ -9,7 +11,7 @@ import {mkdtempSync,readFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {spawn,execFileSync} from 'node:child_process';
-import {randomBytes} from 'node:crypto';
+import {randomBytes,createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
 import {setTimeout as delay} from 'node:timers/promises';
 import {mailHandler} from '../infra/mail-adapter/server.mjs';
@@ -30,13 +32,13 @@ const smtp=tcpServer(socket=>{
  if(/^(EHLO|HELO)/i.test(line))socket.write('250 localhost\r\n');else if(/^DATA/i.test(line)){data=true;socket.write('354 end with dot\r\n')}else if(/^QUIT/i.test(line))socket.end('221 bye\r\n');else socket.write('250 ok\r\n');}});
 });
 const listen=server=>new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
-let adapter;let rejectMail=false;
+let adapter;let rejectMail=false;let scanMode='Clean';
 try{
  execFileSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',join(directory,'key.pem'),'-out',join(directory,'cert.pem'),'-days','1','-subj','/CN=localhost','-addext','subjectAltName=DNS:localhost,IP:127.0.0.1'],{stdio:'ignore'});
  await listen(smtp);
  const transport=nodemailer.createTransport({host:'127.0.0.1',port:smtp.address().port,secure:false,ignoreTLS:true});
  const key=randomBytes(32).toString('hex');
- adapter=httpsServer({key:readFileSync(join(directory,'key.pem')),cert:readFileSync(join(directory,'cert.pem'))},mailHandler({key,send:message=>{if(rejectMail)throw Error('Synthetic delivery failure');return transport.sendMail({from:'synthetic@example.test',...message})}}));await listen(adapter);
+ adapter=httpsServer({key:readFileSync(join(directory,'key.pem')),cert:readFileSync(join(directory,'cert.pem'))},((mail)=>async(req,res)=>{if(req.url!=='/scan')return mail(req,res);if(req.headers.authorization!=='Bearer '+key){res.writeHead(401);res.end();return}const chunks=[];for await(const chunk of req)chunks.push(chunk);if(scanMode==='Unavailable'){res.writeHead(503);res.end();return}const sha256=createHash('sha256').update(Buffer.concat(chunks)).digest('hex');res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({state:scanMode==='Infected'?'Infected':'Clean',sha256:scanMode==='WrongDigest'?'incorrect':sha256}));})(mailHandler({key,send:message=>{if(rejectMail)throw Error('Synthetic delivery failure');return transport.sendMail({from:'synthetic@example.test',...message})}})));await listen(adapter);
  // Reserve a fresh application port, then release it immediately before startup.
  const reservation=tcpServer();await listen(reservation);const port=reservation.address().port;await new Promise(r=>reservation.close(r));
  const base='http://127.0.0.1:'+port;const filename=join(directory,'clinic.sqlite');const db=createDatabase(filename);
@@ -44,7 +46,7 @@ try{
  db.prepare('INSERT INTO users(id,name,email,password,role) VALUES(?,?,?,?,?)').run('acceptance-owner','Synthetic Owner','owner@example.test',hashPassword(password),'owner');
  db.prepare('INSERT INTO users(id,name,email,password,role) VALUES(?,?,?,?,?)').run('acceptance-physio','Synthetic Provider','physio@example.test',hashPassword(password),'physio');
  db.prepare("INSERT INTO patients(id,name,phone,creator) VALUES(1,'VISIBLE_SYNTHETIC','TEST','acceptance-physio'),(2,'PRIVATE_SYNTHETIC','TEST','acceptance-owner')").run();
- app=spawn(process.execPath,['node_modules/next/dist/bin/next','dev','--hostname','127.0.0.1','--port',String(port)],{cwd:resolve('.'),env:{...process.env,NODE_ENV:'development',DATABASE_URL:'',VERCEL:'',CLINIC_DB:filename,CLINIC_DEMO_ONLY:'0',CLINIC_EMAIL_ENDPOINT:'https://localhost:'+adapter.address().port+'/send',CLINIC_EMAIL_KEY:key,CLINIC_BASE_URL:'https://localhost:'+port,CLINIC_INVITATION_TTL_MINUTES:'5',CLINIC_TRUSTED_PROXY_TOKEN:key,NODE_EXTRA_CA_CERTS:join(directory,'cert.pem')}});
+ app=spawn(process.execPath,['node_modules/next/dist/bin/next','dev','--hostname','127.0.0.1','--port',String(port)],{cwd:resolve('.'),env:{...process.env,NODE_ENV:'development',DATABASE_URL:'',VERCEL:'',CLINIC_DB:filename,CLINIC_DEMO_ONLY:'0',CLINIC_EMAIL_ENDPOINT:'https://localhost:'+adapter.address().port+'/send',CLINIC_EMAIL_KEY:key,CLINIC_SCAN_ENDPOINT:'https://localhost:'+adapter.address().port+'/scan',CLINIC_SCAN_KEY:key,CLINIC_BASE_URL:'https://localhost:'+port,CLINIC_INVITATION_TTL_MINUTES:'5',CLINIC_TRUSTED_PROXY_TOKEN:key,NODE_EXTRA_CA_CERTS:join(directory,'cert.pem')}});
  app.stdout.on('data',x=>logs=(logs+x).slice(-12000));app.stderr.on('data',x=>logs=(logs+x).slice(-12000));
  let ready=false;for(let i=0;i<120;i++){try{const r=await fetch(base+'/api/setup');if(r.ok){ready=true;break}}catch{}await delay(500)}assert(ready,'Local application did not become ready');
  const call=async(path,body,cookie,requestHeaders={})=>{const r=await fetch(base+'/api/'+path,{method:body?'POST':'GET',headers:{origin:base,'x-clinic-proxy-token':key,'x-clinic-client-ip':'127.0.0.1',...requestHeaders,...(body?{'content-type':'application/json'}:{}),...(cookie?{cookie}:{})},...(body?{body:JSON.stringify(body)}:{})});const text=await r.text();let value;try{value=JSON.parse(text)}catch{throw Error('Expected JSON at '+path+' (HTTP '+r.status+', '+(r.headers.get('content-type')||'no content type')+')')}return {status:r.status,value,cookieOptions:r.headers.getSetCookie().find(x=>x.startsWith('clinic_session=')),cookie:r.headers.getSetCookie().find(x=>x.startsWith('clinic_session='))?.split(';')[0]}};
@@ -92,8 +94,10 @@ try{
  if(process.env.CLINIC_ASSETS_ACCEPTANCE==='1')await verifyAssets({call,db,ownerCookie:owner.cookie,deniedCookie:clinician.cookie});
  if(process.env.CLINIC_COMPLETION_ACCEPTANCE==='1')await verifyIncidents({call,db,ownerCookie:owner.cookie,deniedCookie:clinician.cookie});
  await verifyReportFiles({base,db,owner:owner.cookie,clinician:clinician.cookie});
+ await verifyFinancialReport({call,db,cookie:owner.cookie,base});
+ await verifyAttachmentScan({call,db,cookie:owner.cookie,setScanMode:mode=>{scanMode=mode}});
  db.close();transport.close();console.log('PASS: actual request-reset -> trusted local HTTPS adapter -> SMTP catcher -> reset -> new login; old password/session and reused token denied. Scoped reads, forbidden profile/users/export and metadata-only audits verified.');
-}catch(error){console.error('Local acceptance failed:',error.message, error.stack?.split('\n').find(x=>x.includes('local-mail-acceptance.mjs:')));process.exitCode=1;}finally{
+}catch(error){console.error('Local acceptance failed:',error.message,error.cause?.code||'', error.stack?.split('\n').find(x=>x.includes('local-mail-acceptance.mjs:')));console.error('Synthetic local server diagnostics:',logs.slice(-3000));process.exitCode=1;}finally{
  if(app){app.kill('SIGTERM');await Promise.race([new Promise(r=>app.once('exit',r)),delay(5000)]);if(app.exitCode===null)app.kill('SIGKILL');}
  for(const socket of sockets)socket.destroy();await Promise.all([new Promise(r=>smtp.close(r)),...(adapter?[new Promise(r=>adapter.close(r))]:[])]);rmSync(directory,{recursive:true,force:true});
 }

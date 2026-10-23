@@ -1,5 +1,6 @@
 {
-  "checkedAt": "2026-10-19",
+  "auditReportVersion": 2,
+  "vulnerabilities": {},
   "metadata": {
     "vulnerabilities": {
       "info": 0,
@@ -17,6 +18,5 @@
       "peerOptional": 0,
       "total": 169
     }
-  },
-  "vulnerabilities": {}
+  }
 }

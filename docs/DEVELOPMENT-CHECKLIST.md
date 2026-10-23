@@ -1,3 +1,5 @@
+Current report/marketing/scanner release: [23 October candidate and operational limits](RELEASE-2026-10-23.md). Older unchecked items below are historical reconciliation; clinical/UAT approval remains open.
+
 # Current development checklist
 
 Reviewed 2026-10-19 against baseline commit `475a9ae`; subsequent hardening is recorded in [HARDENING-SUMMARY.md](../HARDENING-SUMMARY.md). This is the current reconciliation index; older readiness/audit notes are historical. Implemented means code exists, not clinic approval or production certification.

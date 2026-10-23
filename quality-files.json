@@ -45,5 +45,13 @@
   "tests/postgres-concurrency.test.js",
   "tests/postgres-lock-mode.test.js",
   "tests/request-security.test.js",
-  "tests/staff-capacity.test.js"
+  "tests/staff-capacity.test.js",
+  "lib/financial-report.js",
+  "lib/marketing-metrics.js",
+  "lib/attachment-scanner.js",
+  "tests/financial-report.test.js",
+  "tests/attachment-scanner.test.js",
+  "scripts/lib/financial-report-acceptance.mjs",
+  "scripts/lib/attachment-scan-acceptance.mjs",
+  "scripts/financial-recovery-acceptance.mjs"
 ]

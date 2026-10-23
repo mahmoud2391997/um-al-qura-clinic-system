@@ -74,3 +74,5 @@ header .demotools .demobar{position:absolute;inset-inline-end:0;top:100%;z-index
 :root{--muted:#4e636b}.tablecard th,.sortbutton{color:#395b59}.sortbutton span{color:#526c65}.statusbadge.neutral{color:#395665}.statusbadge.bad{color:#963e2a}.empty{color:#4e636b}.dashboardmetrics dd{font-variant-numeric:tabular-nums}.pagination span,footer{color:var(--muted)}
 
 .moneyvalue{font-variant-numeric:tabular-nums;white-space:nowrap}.datecell{direction:ltr;unicode-bidi:isolate}.editorpanel input[type=date],.editorpanel input[type=datetime-local]{direction:ltr;min-height:44px}
+
+.financialreport{min-width:0}.financialreport .financialtablewrap{max-width:100%;overflow-x:auto}.financialreport table{min-width:1500px;border-collapse:collapse}.financialreport th,.financialreport td{padding:10px;white-space:nowrap;text-align:start;border-bottom:1px solid var(--border)}

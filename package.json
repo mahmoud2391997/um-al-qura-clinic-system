@@ -24,7 +24,8 @@
     "audit:verify": "node scripts/verify-audit.mjs",
     "test:backup-postgres": "node scripts/postgres-backup-drill.mjs",
     "test:ui-matrix": "node scripts/ui-hardening-matrix.mjs",
-    "test:concurrency-http": "node scripts/postgres-concurrency-http.mjs"
+    "test:concurrency-http": "node scripts/postgres-concurrency-http.mjs",
+    "test:financial-recovery": "node scripts/financial-recovery-acceptance.mjs"
   },
   "keywords": [],
   "author": "",
@@ -33,7 +34,7 @@
   "type": "module",
   "dependencies": {
     "fflate": "^0.8.3",
-    "next": "^16.4.0",
+    "next": "16.4.1",
     "pdfkit": "^0.20.2",
     "pg": "^8.23.1",
     "react": "^19.3.0",

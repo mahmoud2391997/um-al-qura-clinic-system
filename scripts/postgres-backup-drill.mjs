@@ -72,7 +72,15 @@ esac
   let ready = false;
   for (let i = 0; i < 120; i++) {
     try {
-      docker('exec', container, 'pg_isready', '-U', 'postgres');
+      docker(
+        'exec',
+        container,
+        'pg_isready',
+        '-h',
+        '127.0.0.1',
+        '-U',
+        'postgres',
+      );
       ready = true;
       break;
     } catch {
